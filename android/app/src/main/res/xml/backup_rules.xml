@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app stores nothing; keep the backup empty rather than shipping cat-shaped preferences. -->
+<full-backup-content />

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- squee launcher foreground: a 108x108 grid with the cat pudding inside the 66dp safe zone.
+     Shapes mirror tools/make_icons.py. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ears -->
+    <path
+        android:fillColor="#FFF4E4"
+        android:pathData="M35,52 L39,25 L53,47 Z" />
+    <path
+        android:fillColor="#FFF4E4"
+        android:pathData="M55,47 L69,25 L73,52 Z" />
+    <path
+        android:fillColor="#D7A15F"
+        android:pathData="M39.5,45 L41,32 L48,44 Z" />
+    <path
+        android:fillColor="#D7A15F"
+        android:pathData="M60,44 L67,32 L68.5,45 Z" />
+
+    <!-- body -->
+    <path
+        android:fillColor="#FFF4E4"
+        android:pathData="M30,50 L78,50 L72,71 L66,79 L42,79 L36,71 Z" />
+
+    <!-- caramel glaze -->
+    <path
+        android:fillColor="#D7A15F"
+        android:pathData="M30,50 L78,50 L76.5,59 L31.5,59 Z" />
+
+    <!-- face -->
+    <path
+        android:fillColor="#655937"
+        android:pathData="M42,65 a3,3.6 0 1,0 6,0 a3,3.6 0 1,0 -6,0 Z" />
+    <path
+        android:fillColor="#655937"
+        android:pathData="M60,65 a3,3.6 0 1,0 6,0 a3,3.6 0 1,0 -6,0 Z" />
+    <path
+        android:fillColor="#655937"
+        android:pathData="M52.2,70.6 a1.3,1 0 1,0 2.6,0 a1.3,1 0 1,0 -2.6,0 Z" />
+    <path
+        android:strokeColor="#655937"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M50.5,72.2 L53.5,74.6 L56.5,72.2" />
+</vector>

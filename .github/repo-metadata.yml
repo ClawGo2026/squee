@@ -1,0 +1,37 @@
+# Repository metadata — the "About" box and Topics on github.com
+#
+# GitHub stores these as repository *settings*, not as files: nothing in the tree can set them,
+# and README YAML front matter is ignored (and shows up as literal text in the rendered page).
+# This file is the single source of truth so the wording does not drift; apply it with the
+# command at the bottom after the repository exists.
+
+description: >-
+  A squeezable cat pudding for Android — WebGPU / WebGL 2 soft body, no permissions, no network.
+
+# Optional. Set this once the privacy policy has a public URL (Play requires one):
+#   store/privacy.html served from GitHub Pages, e.g. https://ClawGo2026.github.io/squee/privacy.html
+homepage: ""
+
+topics:
+  - android
+  - kotlin
+  - webgpu
+  - webgl
+  - threejs
+  - webview
+  - softbody
+  - xpbd
+  - physics-simulation
+  - cat
+
+# Apply:
+#
+#   gh repo edit ClawGo2026/squee \
+#     --description "A squeezable cat pudding for Android — WebGPU / WebGL 2 soft body, no permissions, no network." \
+#     --add-topic android,kotlin,webgpu,webgl,threejs,webview,softbody,xpbd,physics-simulation,cat
+#
+# `gh repo edit` resolves the repo from the git remote, but this checkout uses the SSH alias
+# `github-claw` (HostName github.com + a dedicated key), which gh does not map to github.com —
+# so pass `ClawGo2026/squee` explicitly.
+#
+# Without gh, paste the description into Settings → About and add the topics one by one there.

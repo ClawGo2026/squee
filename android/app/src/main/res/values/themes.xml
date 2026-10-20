@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Platform theme only: no AppCompat/Material dependency is needed for a single WebView. -->
+    <style name="Theme.Squee" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/stage</item>
+        <item name="android:colorBackground">@color/stage</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

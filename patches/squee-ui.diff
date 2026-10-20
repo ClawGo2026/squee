@@ -1,0 +1,1801 @@
+diff --git a/preview/eyes.html b/preview/eyes.html
+new file mode 100644
+index 0000000..c0e4d16
+--- /dev/null
++++ b/preview/eyes.html
+@@ -0,0 +1,212 @@
++<!doctype html>
++<html lang="zh-CN">
++<head>
++<meta charset="utf-8" />
++<title>深色口味 · 眼睛配色预览</title>
++<style>
++  body{margin:0;background:#f1e9df;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#4d564e}
++  h1{font-size:18px;margin:24px 24px 4px}
++  p.note{margin:0 24px 18px;color:#8d8779;font-size:12px}
++  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:0 24px 28px}
++#zoom{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;padding:0 24px 8px}
++#zoom .z{background:#141418;border-radius:14px;padding:8px 6px 6px;text-align:center;min-width:0}
++#zoom canvas{display:block;width:100%;height:auto}
++#zoom b{display:block;color:#f3ead9;font-size:12px;margin-top:4px}
++#zoom span{display:block;color:#8d8779;font-size:10px}
++  .card{background:#f9faf7;border:1px solid #ffffffaa;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px #4f554b12}
++  .card canvas{display:block;width:100%;height:auto}
++  .cap{padding:10px 12px 14px}
++  .cap b{display:block;font-size:13px;margin-bottom:2px}
++  .cap span{font-size:11px;color:#8d8779}
++</style>
++</head>
++<body>
++<h1>深色口味 · 眼睛配色预览</h1>
++<p class="note">左边一列是浅色口位的对照组；每个卡片与游戏里用的是同一套猫脸绘制参数（u/v 坐标、瞳仁与高光的相对位置）。</p>
++<h2 style="font-size:14px;margin:0 24px 8px">瞳孔方案 · 放大对比</h2>
++<div id="zoom"></div>
++<h2 style="font-size:14px;margin:18px 24px 8px">整体效果（游戏内同款脸型）</h2>
++<div class="grid" id="grid"></div>
++
++<script>
++/* Mirrors src/scene/world.ts: the same face is painted into a 2048x1024 canvas and mapped onto the
++   pudding skin. Only the eye treatment varies here, so the options can be compared side by side. */
++const FLAVORS={
++  vanilla:{label:'牛奶',body:'#fff1dc',top:'#d7a15f',eye:'#493021',mouth:'#71503b',blush:'#e9aa87'},
++  cocoa:{label:'黑金',body:'#191920',top:'#f2c14e',eye:'#1a1208',rim:'#f2c14e',mouth:'#d9b56a',blush:'#c9962f'},
++  cyber:{label:'赛博',body:'#4a0f6b',top:'#ff2fb9',eye:'#1a1208',rim:'#ff2fb9',mouth:'#ffc9f2',blush:'#ff2fb9'},
++};
++const STYLES={
++  current:{label:'现状',hint:'浅瞳仁 + 深高光'},
++  rim:{label:'A 描边眼（已采用）',hint:'深瞳仁 + 口味色描边 + 白高光'},
++  amber:{label:'B 琥珀眼',hint:'暖琥珀瞳仁 + 白高光'},
++  neon:{label:'C 霓虹眼',hint:'高饱和虹膜 + 白高光'},
++  soft:{label:'D 柔灰眼',hint:'中性浅灰蓝 + 白高光'},
++  depth:{label:'E 渐深眼',hint:'上浅下深的虹膜 + 白高光'},
++  small:{label:'F 小瞳孔',hint:'浅瞳仁缩小 + 深高光'},
++};
++
++function luminance(hex){const n=parseInt(hex.slice(1),16);return (((n>>16)&255)*.299+((n>>8)&255)*.587+(n&255)*.114)/255;}
++function drawPudding(pen,f,style,W,H){
++  // A rounded pudding body, close enough to the in-game silhouette to judge the face against it.
++  const cx=W*.5,top=H*.30,bot=H*.94,halfTop=W*.30,halfBot=W*.40;
++  // ears
++  for(const sgn of [-1,1]){
++    pen.beginPath();
++    pen.moveTo(cx+sgn*halfTop*.62,top+H*.02);
++    pen.lineTo(cx+sgn*halfTop*.70,top-H*.14);
++    pen.lineTo(cx+sgn*halfTop*.14,top-H*.02);
++    pen.closePath();pen.fillStyle=f.body;pen.fill();
++  }
++  // body: rounded trapezoid
++  pen.beginPath();
++  pen.moveTo(cx-halfTop,top);
++  pen.lineTo(cx+halfTop,top);
++  pen.quadraticCurveTo(cx+halfBot,top+(bot-top)*.62,cx+halfBot*.62,bot-H*.06);
++  pen.quadraticCurveTo(cx,bot+H*.02,cx-halfBot*.62,bot-H*.06);
++  pen.quadraticCurveTo(cx-halfBot,top+(bot-top)*.62,cx-halfTop,top);
++  pen.closePath();pen.fillStyle=f.body;pen.fill();
++  // glaze cap
++  pen.save();pen.clip();
++  pen.fillStyle=f.top;
++  pen.fillRect(cx-halfTop,top,halfTop*2,(bot-top)*.22);
++  pen.restore();
++  // soft shading so it reads like the real render
++  const g=pen.createLinearGradient(cx-halfBot,0,cx+halfBot,0);
++  g.addColorStop(0,'#ffffff10');g.addColorStop(.35,'#ffffff00');g.addColorStop(1,'#00000022');
++  pen.fillStyle=g;pen.fillRect(0,0,W,H);
++  drawFace(pen,f,style,W,H);
++}
++
++function drawFace(pen,f,style,W,H){
++  // face UV -> preview pixels (the real shader maps u around the body, v bottom-to-top)
++  const ux=u=>W*(.5+(u-.5)*.78), vy=v=>H*(.52+v*.22);
++  const rx=W*.026,ry=H*.075;
++  const light=luminance(f.eye)>.62;
++  const darkSpark='#241a10',white='#fffdf6';
++  for(const u of [.428,.572]){
++    const x=ux(u),y=vy(.72);
++    if(style==='current'||style==='small'){
++      const scale=style==='small'?.82:1;
++      pen.fillStyle=f.eye;pen.beginPath();pen.ellipse(x,y,rx*scale,ry*scale,0,0,7);pen.fill();
++      pen.fillStyle=light?darkSpark:white;pen.beginPath();pen.ellipse(x-rx*.28,y-ry*.36,rx*.22,ry*.3,0,0,7);pen.fill();
++    }else if(style==='rim'){
++      pen.fillStyle=f.top;pen.beginPath();pen.ellipse(x,y,rx*1.18,ry*1.12,0,0,7);pen.fill();
++      pen.fillStyle='#1a1208';pen.beginPath();pen.ellipse(x,y,rx*.92,ry*.9,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,y-ry*.34,rx*.2,ry*.28,0,0,7);pen.fill();
++    }else if(style==='amber'){
++      const g=pen.createRadialGradient(x-rx*.3,y-ry*.3,rx*.1,x,y,rx*1.2);
++      g.addColorStop(0,'#f0c479');g.addColorStop(.55,'#c4873a');g.addColorStop(1,'#7a4d18');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,y,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,y-ry*.36,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='neon'){
++      const neon=f.label==='赛博'?'#2ee6ff':'#ffd166';
++      const g=pen.createRadialGradient(x,y,rx*.15,x,y,rx*1.15);
++      g.addColorStop(0,neon);g.addColorStop(.6,f.top);g.addColorStop(1,'#1a0b26');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,y,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,y-ry*.34,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='soft'){
++      const g=pen.createRadialGradient(x-rx*.25,y-ry*.25,rx*.1,x,y,rx*1.1);
++      g.addColorStop(0,'#dfe6ee');g.addColorStop(.6,'#9aa7b8');g.addColorStop(1,'#4a5464');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,y,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,y-ry*.34,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='depth'){
++      const g=pen.createLinearGradient(x,y-ry,x,y+ry);
++      g.addColorStop(0,'#6b5a42');g.addColorStop(.45,f.eye);g.addColorStop(1,'#2a2018');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,y,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,y-ry*.36,rx*.2,ry*.26,0,0,7);pen.fill();
++    }
++  }
++  // mouth + blush
++  pen.strokeStyle=f.mouth;pen.lineWidth=W*.012;pen.lineCap='round';
++  pen.beginPath();
++  const mx=W*.5,my=vy(.18);
++  pen.moveTo(mx-W*.05,my);pen.quadraticCurveTo(mx-W*.025,my+W*.03,mx,my+W*.004);
++  pen.quadraticCurveTo(mx+W*.025,my+W*.03,mx+W*.05,my);pen.stroke();
++  for(const u of [.394,.606]){
++    const x=ux(u),y=vy(.36);
++    const g=pen.createRadialGradient(x,y,0,x,y,W*.05);
++    g.addColorStop(0,f.blush+'55');g.addColorStop(1,f.blush+'00');
++    pen.fillStyle=g;pen.beginPath();pen.arc(x,y,W*.05,0,7);pen.fill();
++  }
++}
++
++// 只画一双眼睛的放大对照：背景用对应口味的深色身体色
++const zoom=document.getElementById('zoom');
++for(const fid of ['cocoa','cyber']){
++  for(const sid of Object.keys(STYLES)){
++    if(sid==='current')continue;
++    const f=FLAVORS[fid],s2=STYLES[sid];
++    const box=document.createElement('div');box.className='z';
++    const c=document.createElement('canvas');c.width=300;c.height=240;
++    const pen=c.getContext('2d');
++    pen.fillStyle=f.body;pen.fillRect(0,0,c.width,c.height);
++    const g=pen.createLinearGradient(0,0,c.width,c.height);g.addColorStop(0,'#ffffff10');g.addColorStop(1,'#00000030');
++    pen.fillStyle=g;pen.fillRect(0,0,c.width,c.height);
++    // 放大的眼睛（沿用 drawFace 的绘制分支，只改尺寸）
++    const big={...f};
++    drawFaceBig(pen,big,sid,c.width,c.height);
++    box.append(c);
++    const cap=document.createElement('div');
++    cap.innerHTML=`<b>${f.label} · ${s2.label}</b><span>${s2.hint}</span>`;
++    box.append(cap);zoom.append(box);
++  }
++}
++function drawFaceBig(pen,f,style,W,H){
++  const rx=W*.13,ry=H*.30,cx=W*.5,cy=H*.48;
++  const light=luminance(f.eye)>.62,darkSpark='#241a10',white='#fffdf6';
++  for(const sgn of [-1,1]){
++    const x=cx+sgn*rx*1.5;
++    if(style==='current'||style==='small'){
++      const sc=style==='small'?.82:1;
++      pen.fillStyle=f.eye;pen.beginPath();pen.ellipse(x,cy,rx*sc,ry*sc,0,0,7);pen.fill();
++      pen.fillStyle=light?darkSpark:white;pen.beginPath();pen.ellipse(x-rx*.28,cy-ry*.36,rx*.2,ry*.3,0,0,7);pen.fill();
++    }else if(style==='rim'){
++      pen.fillStyle=f.top;pen.beginPath();pen.ellipse(x,cy,rx*1.18,ry*1.1,0,0,7);pen.fill();
++      pen.fillStyle='#1a1208';pen.beginPath();pen.ellipse(x,cy,rx*.9,ry*.88,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,cy-ry*.34,rx*.2,ry*.28,0,0,7);pen.fill();
++    }else if(style==='amber'){
++      const g=pen.createRadialGradient(x-rx*.3,cy-ry*.3,rx*.1,x,cy,rx*1.2);
++      g.addColorStop(0,'#f0c479');g.addColorStop(.55,'#c4873a');g.addColorStop(1,'#7a4d18');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,cy,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,cy-ry*.36,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='neon'){
++      const neon=f.label==='赛博'?'#2ee6ff':'#ffd166';
++      const g=pen.createRadialGradient(x,cy,rx*.15,x,cy,rx*1.15);
++      g.addColorStop(0,neon);g.addColorStop(.6,f.top);g.addColorStop(1,'#1a0b26');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,cy,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,cy-ry*.34,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='soft'){
++      const g=pen.createRadialGradient(x-rx*.25,cy-ry*.25,rx*.1,x,cy,rx*1.1);
++      g.addColorStop(0,'#dfe6ee');g.addColorStop(.6,'#9aa7b8');g.addColorStop(1,'#4a5464');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,cy,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,cy-ry*.34,rx*.2,ry*.26,0,0,7);pen.fill();
++    }else if(style==='depth'){
++      const g=pen.createLinearGradient(x,cy-ry,x,cy+ry);
++      g.addColorStop(0,'#6b5a42');g.addColorStop(.45,f.eye);g.addColorStop(1,'#2a2018');
++      pen.fillStyle=g;pen.beginPath();pen.ellipse(x,cy,rx,ry,0,0,7);pen.fill();
++      pen.fillStyle=white;pen.beginPath();pen.ellipse(x-rx*.3,cy-ry*.36,rx*.2,ry*.26,0,0,7);pen.fill();
++    }
++  }
++}
++
++const grid=document.getElementById('grid');
++const order=[...Object.keys(FLAVORS)];
++for(const fid of order){
++  for(const sid of Object.keys(STYLES)){
++    if(fid==='vanilla'&&sid!=='current')continue;
++    const f=FLAVORS[fid],s=STYLES[sid];
++    const card=document.createElement('div');card.className='card';
++    const c=document.createElement('canvas');c.width=560;c.height=470;
++    const pen=c.getContext('2d');
++    pen.fillStyle='#f1e9df';pen.fillRect(0,0,c.width,c.height);
++    drawPudding(pen,f,sid,c.width,c.height);
++    card.append(c);
++    const cap=document.createElement('div');cap.className='cap';
++    cap.innerHTML=`<b>${f.label} · ${s.label}</b><span>${s.hint}</span>`;
++    card.append(cap);grid.append(card);
++  }
++}
++</script>
++</body>
++</html>
+\ No newline at end of file
+diff --git a/src/fonts/squee-round.woff2 b/src/fonts/squee-round.woff2
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf8eebf031988668ec7fc0f77e2cc8da63c8d7ea
+GIT binary patch
+literal 14708
+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
+CmTXu6
+
+literal 0
+HcmV?d00001
+
+diff --git a/src/interaction/grab.ts b/src/interaction/grab.ts
+index 35e0df2..635603a 100644
+--- a/src/interaction/grab.ts
++++ b/src/interaction/grab.ts
+@@ -1,41 +1,188 @@
+ import { Raycaster,Vector2,Vector3,Plane,Triangle } from 'three/webgpu';
+ import type { World } from '../scene/world.ts';
+ import type { Simulation } from '../physics/simulation.ts';
++
++/** How long a tap keeps pressing before the grip lets go, in seconds. */
++const POKE_SECONDS=.16;
++/** How far a tap pushes the surface in, in world units — deep enough to see, shallow enough to keep volume. */
++const POKE_DEPTH=.2;
++/** Fraction of the way to the body axis that a full squeeze pulls the midpoint. */
++const PINCH_PULL=.5;
++/** A press that travels less than TAP_SLOP pixels and lasts under TAP_SECONDS counts as a tap. The window
++ * is generous because a deliberate tap is easily a third of a second on a phone. */
++const TAP_SLOP=6,TAP_SECONDS=.45;
++/** Height of the point every poke and squeeze aims at: the middle of the body. */
++const CORE_Y=.7;
++
++interface Contact {
++  id:number;
++  start:[number,number];
++  distance:number;
++  since:number;
++  /** Barycentric weights of the grabbed triangle, so a surviving finger can re-grab on its own. */
++  weights:[number,number][];
++  plane:Plane;
++  /** Where this finger is right now, tracked on its own drag plane. */
++  now:Vector3;
++}
++
+ export function installGrab(canvas:HTMLCanvasElement,world:World,sim:Simulation) {
+   const abort=new AbortController(),options={signal:abort.signal};
+-  const ray=new Raycaster(),pointer=new Vector2(),plane=new Plane(),target=new Vector3();
+-  let active:number|null=null,start:[number,number]=[0,0],distance=0,startPoint:Vector3|null=null;
+-  const stats={starts:0,moves:0,releases:0,lastReleaseDistance:0,lastReleaseEnergy:0};
++  const ray=new Raycaster(),pointer=new Vector2();
++  const va=new Vector3(),vb=new Vector3(),vc=new Vector3(),bary=new Vector3();
++  const mid=new Vector3(),core=new Vector3(),pull=new Vector3();
++  const contacts=new Map<number,Contact>();
++  let drag:Contact|null=null;
++  let pinch:null|{a:Contact;b:Contact;span:number}=null;
++  let poke:null|{from:Vector3;delta:Vector3;age:number}=null;
++  let active:number|null=null;
++  const stats={starts:0,moves:0,releases:0,pokes:0,squeezes:0,lastReleaseDistance:0,lastReleaseEnergy:0};
++
+   function rayAt(e:PointerEvent) {
+-    const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
++    const r=canvas.getBoundingClientRect();
++    pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+     ray.setFromCamera(pointer,world.camera);
+   }
+-  function cancel(){sim.body.release();if(active!==null&&canvas.hasPointerCapture(active))canvas.releasePointerCapture(active);active=null;canvas.classList.remove('grabbing');}
++  /** Moves a held finger along its drag plane and returns false when the ray runs parallel to it. */
++  function follow(c:Contact,e:PointerEvent):boolean {
++    c.distance=Math.max(c.distance,Math.hypot(e.clientX-c.start[0],e.clientY-c.start[1]));
++    rayAt(e);
++    return !!ray.ray.intersectPlane(c.plane,c.now);
++  }
++  /** Ray-casts the cat; returns a contact for the pressed patch, or null when the press misses. */
++  function contactFor(e:PointerEvent):Contact|null {
++    rayAt(e);
++    const hit=ray.intersectObject(world.pudding)[0];
++    if(!hit?.face)return null;
++    const {a,b,c}=hit.face,position=world.pudding.geometry.attributes.position;
++    const hitBary=Triangle.getBarycoord(hit.point,va.fromBufferAttribute(position,a),vb.fromBufferAttribute(position,b),vc.fromBufferAttribute(position,c),bary);
++    if(!hitBary)return null;
++    return {
++      id:e.pointerId,start:[e.clientX,e.clientY],distance:0,since:sim.time,
++      weights:world.skin.hitWeights([a,b,c],[hitBary.x,hitBary.y,hitBary.z]),
++      plane:new Plane().setFromNormalAndCoplanarPoint(world.camera.getWorldDirection(va),hit.point),
++      now:hit.point.clone(),
++    };
++  }
++  function drop(c:Contact) {
++    contacts.delete(c.id);
++    if(canvas.hasPointerCapture(c.id))canvas.releasePointerCapture(c.id);
++  }
++  function clear() {
++    for(const c of contacts.values())if(canvas.hasPointerCapture(c.id))canvas.releasePointerCapture(c.id);
++    contacts.clear();drag=null;pinch=null;poke=null;active=null;
++    sim.body.release();canvas.classList.remove('grabbing');
++  }
++
++  /* ── 捏一捏 ──────────────────────────────────────────────────────────
++   * Two fingers become a single grip spanning both patches. Its target is the midpoint between them,
++   * drawn towards the body axis in proportion to how much closer the fingers came than when they
++   * landed, so pushing your fingers together compresses the pudding instead of dragging it sideways.
++   * Lifting one finger hands the grip back to a plain one-finger drag rather than dropping the cat. */
++  function pinchTarget() {
++    if(!pinch)return;
++    const {a,b,span}=pinch;
++    mid.addVectors(a.now,b.now).multiplyScalar(.5);
++    const gap=Math.hypot(a.now.x-b.now.x,a.now.y-b.now.y,a.now.z-b.now.z);
++    if(span>.0001) {
++      const closed=Math.max(0,Math.min(1,(span-gap)/span));
++      core.set(0,CORE_Y,0);
++      pull.copy(core).sub(mid);
++      mid.addScaledVector(pull,closed*PINCH_PULL*Math.min(1,pull.length()));
++      if(closed>.05)stats.squeezes++;
++    }
++    sim.body.moveGrab([mid.x,mid.y,mid.z]);
++  }
++  function beginPinch(a:Contact,b:Contact) {
++    const weights:[number,number][]=[];
++    // One grip across both patches: each finger's share is halved so the pair reads as one squeeze.
++    for(const [id,w] of [...a.weights,...b.weights])weights.push([id,w*.5]);
++    sim.body.beginGrab(weights);
++    pinch={a,b,span:Math.hypot(a.now.x-b.now.x,a.now.y-b.now.y,a.now.z-b.now.z)};
++    drag=null;active=null;stats.starts++;
++    pinchTarget();
++  }
++
++  /* ── 戳一戳 ──────────────────────────────────────────────────────────
++   * A tap used to fire a small downward velocity impulse that the pudding swallowed whole. It is now
++   * a real press: the finger's own patch is gripped and pushed towards the middle of the body, held
++   * for a beat and then let go, so the dent springs back and wobbles like every other deformation. */
++  function startPoke(c:Contact) {
++    core.set(0,CORE_Y,0);
++    pull.copy(core).sub(c.now).normalize().multiplyScalar(POKE_DEPTH);
++    sim.body.beginGrab(c.weights);
++    poke={from:c.now.clone(),delta:pull.clone(),age:0};stats.pokes++;stats.starts++;
++  }
++
++  /**
++   * Called once per frame. The dent is eased in over the hold instead of arriving in a single jump:
++   * snapping the whole depth in one frame yanks the body hard enough to send the cat spinning, which
++   * reads as a glitch rather than a poke.
++   */
++  function update(dt:number) {
++    if(!poke)return;
++    poke.age+=dt;
++    const t=Math.min(1,poke.age/POKE_SECONDS),ease=t*t*(3-2*t);
++    sim.body.moveGrab([poke.from.x+poke.delta.x*ease,poke.from.y+poke.delta.y*ease,poke.from.z+poke.delta.z*ease]);
++    if(t>=1){sim.body.release();poke=null;}
++  }
++
++  /**
++   * Lifts one finger. A pinch hands the grip back to whichever finger is still down, so adding or
++   * removing a finger mid-squeeze never drops the cat; the last finger up either pokes or lets go.
++   */
++  function release(c:Contact,tapped:boolean) {
++    stats.releases++;stats.lastReleaseDistance=c.distance;stats.lastReleaseEnergy=sim.body.metrics().energy;
++    const wasDrag=drag===c,wasPinch=!!pinch&&(pinch.a===c||pinch.b===c);
++    drop(c);
++    if(wasPinch) {
++      pinch=null;sim.body.release();
++      const rest=[...contacts.values()][0]??null;
++      if(rest){sim.body.beginGrab(rest.weights);drag=rest;active=rest.id;}
++      else {drag=null;active=null;canvas.classList.remove('grabbing');}
++      return;
++    }
++    if(!wasDrag)return;
++    drag=null;active=null;canvas.classList.remove('grabbing');
++    if(tapped)startPoke(c);else sim.body.release();
++  }
++
+   canvas.addEventListener('pointerdown',e=>{
+-    if(sim.tool!=='grab'||sim.paused||sim.hidden||active!==null||e.button!==0)return;
+-    rayAt(e);const hit=ray.intersectObject(world.pudding)[0];if(!hit?.face)return;
+-    const {a,b,c}=hit.face,positions=world.pudding.geometry.attributes.position;
+-    const bary=Triangle.getBarycoord(hit.point,new Vector3().fromBufferAttribute(positions,a),new Vector3().fromBufferAttribute(positions,b),new Vector3().fromBufferAttribute(positions,c),new Vector3());
+-    if(!bary)return;
+-    sim.body.beginGrab(world.skin.hitWeights([a,b,c],[bary.x,bary.y,bary.z]));
+-    stats.starts++;
+-    startPoint=hit.point.clone();plane.setFromNormalAndCoplanarPoint(world.camera.getWorldDirection(new Vector3()),hit.point);
+-    active=e.pointerId;start=[e.clientX,e.clientY];distance=0;canvas.setPointerCapture(active);canvas.classList.add('grabbing');
++    if(sim.tool!=='grab'||sim.paused||sim.hidden||e.button!==0)return;
++    if(contacts.has(e.pointerId)||poke)return;      // a poke owns the body until it lets go
++    if(contacts.size>=2)return;                    // two fingers are enough
++    const contact=contactFor(e);
++    if(!contact)return;
++    contacts.set(contact.id,contact);
++    canvas.setPointerCapture(contact.id);canvas.classList.add('grabbing');
++    const other=[...contacts.values()].find(c=>c!==contact);
++    if(other){beginPinch(other,contact);return;}  // second finger down: promote to a squeeze
++    sim.body.beginGrab(contact.weights);
++    drag=contact;active=contact.id;stats.starts++;
+   },options);
+   canvas.addEventListener('pointermove',e=>{
+-    if(active!==e.pointerId)return;
+-    if(sim.paused||!sim.body.grab){cancel();return;}
+-    distance=Math.max(distance,Math.hypot(e.clientX-start[0],e.clientY-start[1]));rayAt(e);
+-    stats.moves++;
+-    if(ray.ray.intersectPlane(plane,target))sim.body.moveGrab([target.x,target.y,target.z]);
++    const contact=contacts.get(e.pointerId);
++    if(!contact||sim.paused||poke)return;
++    if(pinch) {
++      if(follow(contact,e)){stats.moves++;pinchTarget();}
++      return;
++    }
++    if(drag!==contact){return;}
++    if(!sim.body.grab){clear();return;}
++    if(sim.hidden){clear();return;}
++    if(follow(contact,e)){stats.moves++;sim.body.moveGrab([contact.now.x,contact.now.y,contact.now.z]);}
+   },options);
+   canvas.addEventListener('pointerup',e=>{
+-    if(active!==e.pointerId)return;
+-    stats.releases++;stats.lastReleaseDistance=distance;stats.lastReleaseEnergy=sim.body.metrics().energy;
+-    const tapped=distance<5&&startPoint&&!sim.paused;cancel();
+-    if(tapped&&startPoint)sim.body.tap([startPoint.x,startPoint.y,startPoint.z]);
++    const contact=contacts.get(e.pointerId);
++    if(!contact)return;
++    release(contact,contact.distance<TAP_SLOP&&sim.time-contact.since<TAP_SECONDS&&!sim.paused);
+   },options);
+-  canvas.addEventListener('pointercancel',cancel,options);canvas.addEventListener('lostpointercapture',cancel,options);
+-  window.addEventListener('blur',cancel,options);
+-  return {cancel,stats,dispose(){cancel();abort.abort();}};
+-}
++  canvas.addEventListener('pointercancel',clear,options);
++  canvas.addEventListener('lostpointercapture',e=>{
++    // The system can take capture away; treat that as a release, never as a poke.
++    const contact=contacts.get(e.pointerId);
++    if(contact)release(contact,false);
++  },options);
++  window.addEventListener('blur',clear,options);
++  return {cancel:clear,update,stats,dispose(){clear();abort.abort();}};
++}
+\ No newline at end of file
+diff --git a/src/main.ts b/src/main.ts
+index 10c4be1..a393a8b 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,143 +1,152 @@
+-import { DEFAULT_FIRMNESS, DEFAULT_DAMPING } from './physics/settings.ts';
+ import './styles.css';
+ import { Simulation } from './physics/simulation.ts';
+ import { createWorld } from './scene/world.ts';
+ import type { Flavor, World } from './scene/world.ts';
+ import { installGrab } from './interaction/grab.ts';
+-import { installSpoon } from './interaction/spoon.ts';
+ import { mountPanel, element } from './ui/panel.ts';
+ 
++/**
++ * squee · 猫咪牛奶布丁 — 极简入口
++ *
++ * 拖一拖、捏一捏、戳一戳、摇一摇、换个口味、复原一下。物理（CPU XPBD，240 Hz 固定步）保持原样，是页面里唯一重活。
++ * 摇一摇：devicemotion 的加速度超过阈值时，按主轴方向合成一次虚拟抓取——和手指拉动走同一套
++ * beginGrab/moveGrab/release，所以手感完全一致。
++ */
+ mountPanel();
+ const sim=new Simulation(),canvas=element<HTMLCanvasElement>('#scene');
+ const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+-const inspect=new URLSearchParams(location.search).has('inspect');
+ const abort=new AbortController(),opts={signal:abort.signal};
+-let world:World|undefined,grab:ReturnType<typeof installGrab>|undefined,spoon:ReturnType<typeof installSpoon>|undefined;
+-let squishUntil=0;
+-let last=0,lastRead=0,selectedFlavor:Flavor='vanilla',disposed=false;
+-let benchmark:{start:number;frames:number[];cpu:number[];lastNudge:number}|null=null;
+-const status=element('#gpu-status'),message=element('#scene-message');
+-const enableControls=(enabled:boolean)=>document.querySelectorAll<HTMLButtonElement|HTMLInputElement>('.controls button,.controls input,.mobile-playbar button').forEach(el=>{el.disabled=!enabled;});
+-enableControls(false);
+-element('#diagnostics').hidden=!inspect;
+-element('#inspector-toggle').hidden=!inspect;
+-element('#inspector-toggle').addEventListener('click',()=>{element('#diagnostics').hidden=!element('#diagnostics').hidden;},opts);
++const message=element('#scene-message');
++let world:World|undefined,grab:ReturnType<typeof installGrab>|undefined;
++let last=0,disposed=false;
++const FLAVOR_IDS=['vanilla','berry','matcha','cocoa','cyber'];
++function storedFlavor():Flavor {
++  // QA switch: `?flavor=cocoa` overrides the stored pick, handy for screenshots.
++  try{
++    const asked=new URLSearchParams(location.search).get('flavor');
++    if(asked&&(FLAVOR_IDS as string[]).includes(asked))return asked as Flavor;
++    const saved=localStorage.getItem(FLAVOR_KEY);
++    return saved&&(FLAVOR_IDS as string[]).includes(saved)?saved as Flavor:'vanilla';
++  }catch{return 'vanilla';}
++}
++let selectedFlavor:Flavor=storedFlavor();
++
++const FLAVOR_KEY='squee.flavor';
+ function setFlavor(name:Flavor) {
+   selectedFlavor=name;world?.flavor(name);
++  // Survives the rotation reload, which is the only way this app restarts the page.
++  try{localStorage.setItem(FLAVOR_KEY,name);}catch{/* private mode: flavour simply resets */}
+   document.querySelectorAll<HTMLButtonElement>('[data-flavor]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.flavor===name)));
+-  element('#flavor-number').textContent={vanilla:'01 / 03',berry:'02 / 03',matcha:'03 / 03'}[name];
+-}
+-function setTool(tool:'grab'|'spoon') {
+-  squishUntil=0;grab?.cancel();spoon?.cancel();sim.body.release();sim.tool=tool;
+-  element('#tool-hint').textContent=tool==='spoon'?'在猫咪身上按住，松手挖走一小口。':'按住猫咪拖一拖，松手看它弹回来。';
+-  element('#mobile-tool-hint').textContent=tool==='spoon'?'正在用勺子 · 想继续捏？点左边「捏一捏」':'正在捏捏 · 按住猫咪拖动，松手回弹';
+-  if(world)world.spoon.visible=tool==='spoon';canvas.classList.toggle('spoon',tool==='spoon');
+-  document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===tool)));
+-}
+-function sliders() {
+-  const firmness=element<HTMLInputElement>('#firmness'),damping=element<HTMLInputElement>('#damping');
+-  sim.body.firmness=Number(firmness.value)/100;sim.body.damping=Number(damping.value)/100*8;
+-  element('#firmness-value').textContent=firmness.value+' / 100';
+-  element('#damping-value').textContent=damping.value+' / 100';
+-  for(const el of [firmness,damping])el.style.setProperty('--fill',el.value+'%');
+-}
+-function reset() {
+-  grab?.cancel();spoon?.cancel();sim.reset();setFlavor('vanilla');setTool('grab');
+-  element<HTMLInputElement>('#firmness').value=String(DEFAULT_FIRMNESS);element<HTMLInputElement>('#damping').value=String(DEFAULT_DAMPING);sliders();
+-  element<HTMLInputElement>('#slow').checked=false;element<HTMLInputElement>('#mesh').checked=false;if(world)world.mesh=false;
+-  element('#pause').textContent='暂停';element('#pause').setAttribute('aria-pressed','false');
+ }
+ document.querySelectorAll<HTMLButtonElement>('[data-flavor]').forEach(b=>b.addEventListener('click',()=>setFlavor(b.dataset.flavor as Flavor),opts));
+-function returnToCat(){if(window.matchMedia('(max-width:1280px)').matches)window.scrollTo({top:0,behavior:'instant'});}
+-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach(b=>b.addEventListener('click',()=>{setTool(b.dataset.tool as 'grab'|'spoon');returnToCat();},opts));
+-element('#squish').addEventListener('click',()=>{
+-  if(!world||sim.body.empty)return;
+-  setTool('grab');sim.pause(false);
+-  element('#pause').textContent='暂停';element('#pause').setAttribute('aria-pressed','false');
+-  let best=0,dist=Infinity;
++// Reset restores the pudding only: the flavour you picked stays picked.
++element('#reset').addEventListener('click',()=>{grab?.cancel();stopRock();sim.reset();},opts);
++document.addEventListener('visibilitychange',()=>{grab?.cancel();stopRock();sim.visibility(document.hidden);last=0;},opts);
++
++/* ── 摇一摇 ──────────────────────────────────────────────────────────────
++ * A shake tumbles the cat. Injecting raw angular velocity just leaves the soft body lying on its
++ * side — the volume constraints preserve shape, not orientation — so the shake instead rocks it:
++ * a grip on the crown sweeps the cat over in a few decaying swings along the shake axis, and the
++ * cat wobbles back upright on its own. Amplitude scales with how hard the phone was swung. */
++const SHAKE_TRIGGER=13;   // m/s² — "normal" sensitivity, ignores walking and desk bumps
++const SHAKE_COOLDOWN=.7;  // seconds between shakes
++const ROCK_SECONDS=1,ROCK_CYCLES=2.5;
++let rock:null|{anchor:[number,number,number];dx:number;dz:number;reach:number;t0:number}=null;
++let nextShakeAt=0,sawMotion=false;
++
++/** Reads the live grip anchor; kept in its own scope so TypeScript does not narrow it away. */
++function gripAnchor() {
++  const grip=sim.body.grab;
++  return grip?grip.anchor:null;
++}
++function startRock(dirX:number,dirZ:number,magnitude:number) {
++  if(!world||sim.body.empty||sim.paused||sim.hidden||sim.body.grab||rock)return;
++  // Grip the crown on the side the phone was swung towards, so the cat falls that way.
++  let best=0,score=-Infinity;
+   for(let i=0;i<world.skin.count;i++) {
+-    const p=world.skin.rest,d=Math.hypot(p[i*3],p[i*3+1]-1.65,p[i*3+2]);
+-    if(d<dist){dist=d;best=i;}
++    const x=world.skin.rest[i*3],y=world.skin.rest[i*3+1],z=world.skin.rest[i*3+2];
++    const value=(x*dirX+z*dirZ)+(y-1.2)*1.6;
++    if(value>score){score=value;best=i;}
+   }
+   sim.body.beginGrab(world.skin.hitWeights([best],[1]));
+-  if(sim.body.grab){const p=sim.body.grab.anchor;sim.body.moveGrab([p[0],p[1]-.48,p[2]]);squishUntil=sim.time+.46;}
+-},opts);
+-canvas.addEventListener('pointerdown',()=>{if(squishUntil){sim.body.release();squishUntil=0;}},opts);
+-element('#bite').addEventListener('click',()=>{setTool('spoon');spoon?.bite();returnToCat();},opts);
+-element('#firmness').addEventListener('input',sliders,opts);element('#damping').addEventListener('input',sliders,opts);
+-element('#nudge').addEventListener('click',()=>sim.nudge(),opts);document.querySelectorAll<HTMLButtonElement>('#reset,#mobile-reset').forEach(b=>b.addEventListener('click',()=>{reset();returnToCat();element('#mobile-tool-hint').textContent='猫咪已复原 · 现在可以按住它继续捏啦';},opts));
+-element('#pause').addEventListener('click',()=>{
+-  grab?.cancel();spoon?.cancel();sim.pause(!sim.paused);element('#pause').textContent=sim.paused?'继续':'暂停';element('#pause').setAttribute('aria-pressed',String(sim.paused));
++  const a=gripAnchor();
++  if(!a)return;
++  rock={anchor:[a[0],a[1],a[2]],dx:dirX,dz:dirZ,reach:Math.min(.46,.2+magnitude/SHAKE_TRIGGER*.07),t0:sim.time};
++}
++/**
++ * Drops a shake in progress and re-arms the trigger.
++ *
++ * `rock.t0` and `nextShakeAt` are both stamped in `sim.time`, and `sim.reset()` rewinds that clock to
++ * zero. Left alone, the cooldown stayed parked in the far future and the in-flight grip stayed latched
++ * on the cat — so 复原 looked like it had permanently killed 摇一摇.
++ */
++function stopRock() {
++  if(rock)sim.body.release();
++  rock=null;nextShakeAt=0;
++}
++function advanceRock() {
++  if(!rock)return;
++  const age=sim.time-rock.t0;
++  // A clock that moved backwards (any reset we did not see) must not keep the grip alive forever.
++  if(age<0||age>=ROCK_SECONDS){sim.body.release();rock=null;return;}
++  const swing=Math.sin(age/ROCK_SECONDS*Math.PI*2*ROCK_CYCLES);
++  sim.body.moveGrab([
++    rock.anchor[0]+rock.dx*rock.reach*swing,
++    rock.anchor[1]+.05*Math.abs(swing),
++    rock.anchor[2]+rock.dz*rock.reach*swing,
++  ]);
++}
++window.addEventListener('devicemotion',event=>{
++  // Some devices expose only gravity-inclusive acceleration; subtract g so both sources agree.
++  const raw=event.acceleration;
++  const gravity=event.accelerationIncludingGravity;
++  const a=raw??(gravity?{x:gravity.x??0,y:(gravity.y??0)-9.81,z:gravity.z??0}:null);
++  if(!a)return;
++  if(!sawMotion){sawMotion=true;console.log('MOTION available raw='+!!raw+' gravity='+!!gravity);}
++  if(!world||sim.body.grab)return;
++  const x=a.x??0,y=a.y??0;
++  const magnitude=Math.hypot(x,y);
++  if(magnitude<SHAKE_TRIGGER||sim.time<nextShakeAt)return;
++  nextShakeAt=sim.time+SHAKE_COOLDOWN;
++  // Screen axes: right -> world +x, up -> world -z (the camera looks from +z).
++  startRock(Math.abs(x)>=Math.abs(y)?Math.sign(x):0,Math.abs(y)>Math.abs(x)?-Math.sign(y):0,magnitude);
+ },opts);
+-element('#slow').addEventListener('change',()=>{sim.slow=element<HTMLInputElement>('#slow').checked;},opts);
+-element('#mesh').addEventListener('change',()=>{if(world)world.mesh=element<HTMLInputElement>('#mesh').checked;},opts);
+-document.addEventListener('visibilitychange',()=>{grab?.cancel();spoon?.cancel();sim.visibility(document.hidden);last=0;},opts);
++// QA switch: `?shake=n` rocks n times so the effect can be checked without a sensor.
++if(typeof location!=='undefined') {
++  const scripted=Number(new URLSearchParams(location.search).get('shake')??0);
++  if(scripted>0)for(let i=0;i<scripted;i++)setTimeout(()=>startRock(1,0,20),2500+i*2000);
++}
++
++/* ── 启动 ───────────────────────────────────────────────────────────── */
+ function fail(error:unknown) {
+   if(disposed)return;
+-  world?.renderer.setAnimationLoop(null);grab?.cancel();spoon?.cancel();
+-  enableControls(false);
+-  status.className='status failed';status.innerHTML='<b></b> WEBGPU UNAVAILABLE';
++  world?.renderer.setAnimationLoop(null);grab?.cancel();
+   message.hidden=false;message.textContent=error instanceof Error?error.message:String(error);
+   element('#retry').hidden=false;console.error(error);
+ }
+ element('#retry').addEventListener('click',()=>location.reload(),opts);
+-element('#benchmark').addEventListener('click',()=>{
+-  reset();benchmark={start:performance.now(),frames:[],cpu:[],lastNudge:0};
+-  element('#benchmark-result').textContent='';element<HTMLButtonElement>('#benchmark').disabled=true;
+-  element('#diagnostics').hidden=true;
+-},opts);
+-element('#compression-check').addEventListener('click',()=>{
+-  if(!world)return;sim.pause(false);
+-  let best=0,dist=Infinity;
+-  for(let i=0;i<world.skin.count;i++) {
+-    const p=world.skin.rest,d=Math.hypot(p[i*3],p[i*3+1]-sim.body.mesh.height,p[i*3+2]);if(d<dist){dist=d;best=i;}
+-  }
+-  sim.body.beginGrab(world.skin.hitWeights([best],[1]));
+-  const p=sim.body.grab!.anchor;sim.body.moveGrab([p[0],p[1]-.405,p[2]]);
+-},opts);
+-element('#release-check').addEventListener('click',()=>sim.body.release(),opts);
+-function sampleBenchmark(now:number,dt:number,cpu:number) {
+-  if(!benchmark)return;
+-  const seconds=(now-benchmark.start)/1000;
+-  if(seconds>2){benchmark.frames.push(dt*1000);benchmark.cpu.push(cpu);}
+-  if(seconds-benchmark.lastNudge>3){sim.body.nudge(Math.floor(seconds/3)%2?1:-1);benchmark.lastNudge=seconds;}
+-  element('#benchmark-status').textContent=`Recording ${Math.min(60,Math.floor(seconds))} / 60 s`;
+-  element('#inspector-toggle').textContent=`Recording ${Math.min(60,Math.floor(seconds))} / 60 s`;
+-  if(seconds>=62) {
+-    const values=benchmark.frames.slice().sort((a,b)=>a-b),sum=values.reduce((a,b)=>a+b,0);
+-    const result={measuredSeconds:sum/1000,frames:values.length,averageFps:values.length*1000/sum,p95FrameMs:values[Math.floor(values.length*.95)],maxFrameMs:values.at(-1),meanCpuUpdateMs:benchmark.cpu.reduce((a,b)=>a+b,0)/values.length,viewport:{width:canvas.clientWidth,height:canvas.clientHeight},scenario:'Alternating nudge every 3 seconds; 2-second warmup excluded',...world!.deviceInfo};
+-    element('#benchmark-result').textContent=JSON.stringify(result,null,2);element('#benchmark-status').textContent='Complete';element<HTMLButtonElement>('#benchmark').disabled=false;element('#inspector-toggle').textContent='Diagnostics · results';benchmark=null;
+-  }
+-}
++
+ async function start() {
+   try {
+     world=await createWorld(canvas,sim);if(disposed){world.dispose();return;}
+     world.renderer.onDeviceLost=()=>fail(new Error('The graphics device was disconnected. Try again to resume.'));
+     world.renderer.onError=error=>fail(new Error(typeof error==='string'?error:JSON.stringify(error)));
+-    grab=installGrab(canvas,world,sim);spoon=installSpoon(canvas,world,sim,bite=>world!.serve(bite));
+-    sim.reset(reduced?0:.1);sliders();setTool('grab');
+-    enableControls(true);
++    grab=installGrab(canvas,world,sim);
++    if(typeof location!=='undefined'&&new URLSearchParams(location.search).has('mesh'))world.mesh=true;
++    sim.reset(reduced?0:.1);setFlavor(selectedFlavor);
++    // Settle the reduced-motion variant before the first frame so nothing appears mid-collapse.
+     if(reduced)for(let i=0;i<480;i++)sim.body.step(sim.stepSize);
+     sim.body.previous.set(sim.body.position);
+-    status.className='status live';status.innerHTML='<b></b> 新鲜出炉';message.hidden=true;
+-    element('#device-info').textContent=JSON.stringify({...world.deviceInfo,mesh:{nodes:sim.body.mesh.mass.length,tetrahedra:sim.body.mesh.volumes.length,triangles:world.skin.indices.length/3,quality:sim.body.mesh.quality}},null,2);
+     world.renderer.setAnimationLoop((now:number)=>{
+       const elapsed=last?(now-last)/1000:1/60,dt=Math.min(.25,elapsed);last=now;
+-      if(squishUntil&&sim.time>=squishUntil){sim.body.release();squishUntil=0;}
+-      const begin=performance.now();sim.advance(dt);world!.update(dt);const cpu=performance.now()-begin;
++      advanceRock();
++      grab?.update(dt);
++      world!.keepFramed();
++      sim.advance(dt);world!.update(dt);
+       world!.renderer.render(world!.scene,world!.camera);
+-      sampleBenchmark(now,elapsed,cpu);
+-      if(now-lastRead>150) {
+-        const m=sim.body.metrics();element('#volume').textContent=`${(m.volumeRatio*100).toFixed(1)}%`;
+-        element('#motion').textContent=Math.min(9.99,Math.sqrt(m.energy)).toFixed(2);
+-        element('#eaten').textContent=`${Math.round(m.eatenRatio*100)}%`;
+-        element('#state').textContent=sim.paused?'暂停中':sim.body.empty?'吃光啦':sim.body.grab?'捏住啦':sim.body.spoon?'按下去':world!.serving?'尝一口':m.energy>.0002?'颤悠悠':'乖乖待着';
+-        if(inspect)element('#physics-info').textContent=JSON.stringify({...m,flavor:selectedFlavor,tool:sim.tool,paused:sim.paused,slow:sim.slow,grabbed:!!sim.body.grab,cells:sim.body.mesh.cells.length,nodes:sim.body.mesh.mass.length,simulationTime:sim.time,pointer:grab?.stats,spoon:spoon?.stats},null,2);
+-        lastRead=now;
+-      }
+     });
+   }catch(error){fail(error);}
+ }
+-function dispose(){if(disposed)return;disposed=true;abort.abort();grab?.dispose();spoon?.dispose();world?.dispose();}
++function dispose(){if(disposed)return;disposed=true;abort.abort();grab?.dispose();world?.dispose();}
+ window.addEventListener('pagehide',dispose,{once:true,signal:abort.signal});if(import.meta.hot)import.meta.hot.dispose(dispose);
+-void start();
++void start();
+\ No newline at end of file
+diff --git a/src/physics/mesh.ts b/src/physics/mesh.ts
+index b9adbba..42ad148 100644
+--- a/src/physics/mesh.ts
++++ b/src/physics/mesh.ts
+@@ -29,6 +29,12 @@ export const cellIndex = (x: number, y: number, z: number, n: number) => (y*n+z)
+ export const cellCoords = (id: number, n: number): Vec3 => [id%n, Math.floor(id/(n*n)), Math.floor(id/n)%n];
+ export const nodeIndex = (x: number, y: number, z: number, n: number) => (y*(n+1)+z)*(n+1)+x;
+ const PUDDING_HEIGHT = 1.35;
++/**
++ * The silhouette is modelled upright and then yawed by this angle. Anything that has to line up with
++ * the cat's own axes — the glaze band, the face decal, the camera heading — must use this value
++ * instead of raw world coordinates, or it lands off-centre on a body that is turned away from x = 0.
++ */
++export const CAT_YAW = .44;
+ 
+ export function tetVolume(p: ArrayLike<number>, a: number, b: number, c: number, d: number): number {
+   const x = p[b*3]-p[a*3], y = p[b*3+1]-p[a*3+1], z = p[b*3+2]-p[a*3+2];
+@@ -49,7 +55,7 @@ function gridRest(n: number, layers: number): Float64Array {
+     const radius = .73+.30*Math.sin(Math.PI*h);
+     const xx = dx*radius*1.15, zz = dz*radius*.86;
+     const ear = .35*(Math.exp(-((xx-.72)**2/.045+(zz-.02)**2/.14))+Math.exp(-((xx+.72)**2/.045+(zz-.02)**2/.14)));
+-    const yy = h*(PUDDING_HEIGHT+ear+.32*(1-r*r)), angle = .44;
++    const yy = h*(PUDDING_HEIGHT+ear+.32*(1-r*r)), angle = CAT_YAW;
+     points.push(xx*Math.cos(angle)+zz*Math.sin(angle), yy, zz*Math.cos(angle)-xx*Math.sin(angle));
+   }
+   return new Float64Array(points);
+diff --git a/src/pudding/surface.ts b/src/pudding/surface.ts
+index 496edfd..e676543 100644
+--- a/src/pudding/surface.ts
++++ b/src/pudding/surface.ts
+@@ -29,6 +29,10 @@ export class PuddingSurface {
+   readonly positions: Float32Array;
+   /** Area-weighted vertex normals and a conservative bounding sphere, refreshed by `update` in one pass. */
+   readonly normals: Float32Array;
++  /** One-ring adjacency over the visible skin, used to smooth the shading normals. */
++  readonly neighbors:Uint16Array;
++  private readonly neighborStart:Int32Array;
++  private scratch:Float32Array=new Float32Array(0);
+   readonly bounds={center:[0,0,0] as [number,number,number],radius:0};
+   readonly count: number;
+   constructor(mesh: VolumeMesh, levels=2) {
+@@ -76,6 +80,20 @@ export class PuddingSurface {
+     this.indices=new Uint32Array(faces.flatMap(([a,b,c,d])=>[a,b,c,a,c,d]));
+     this.offsets=new Uint32Array(offsets);this.nodes=new Uint32Array(nodes);this.weights=new Float64Array(weights);
+     this.positions=new Float32Array(this.count*3);this.normals=new Float32Array(this.count*3);
++    // Adjacency (one ring of surface neighbours per vertex) for the normal smoothing pass.
++    // Each triangle contributes its two other vertices to every one of its three vertices.
++    const degree=new Uint16Array(this.count);
++    for(let t=0;t<this.indices.length;t+=3) { degree[this.indices[t]]+=2;degree[this.indices[t+1]]+=2;degree[this.indices[t+2]]+=2; }
++    this.neighborStart=new Int32Array(this.count+1);
++    for(let i=0;i<this.count;i++) this.neighborStart[i+1]=this.neighborStart[i]+degree[i];
++    this.neighbors=new Uint16Array(this.neighborStart[this.count]);
++    const fill=new Int32Array(this.count);
++    for(let i=0;i<this.count;i++) fill[i]=this.neighborStart[i];
++    for(let t=0;t<this.indices.length;t+=3) {
++      const tri=[this.indices[t],this.indices[t+1],this.indices[t+2]];
++      for(let i=0;i<3;i++) for(let j=0;j<3;j++) if(i!==j) this.neighbors[fill[tri[i]]++]=tri[j];
++    }
++    this.scratch=new Float32Array(this.count*3);
+     this.update(mesh.rest,mesh.rest,1);
+     this.rest=this.positions.slice();
+   }
+@@ -103,6 +121,22 @@ export class PuddingSurface {
+     for(let i=0;i<n.length;i+=3) {
+       const l=Math.hypot(n[i],n[i+1],n[i+2])||1;n[i]/=l;n[i+1]/=l;n[i+2]/=l;
+     }
++    // Sliver triangles skew an area-weighted normal badly enough to show up as a one-pixel shading
++    // streak. Two neighbour-averaging passes over the skin adjacency wash those out without
++    // flattening the shading that the rounded pudding needs.
++    for(let pass=0;pass<2;pass++) {
++      this.scratch.set(n);
++      for(let i=0;i<this.count;i++) {
++        let x=0,y=0,z=0,k=0;
++        for(let j=this.neighborStart[i];j<this.neighborStart[i+1];j++) {
++          const o=this.neighbors[j]*3;x+=this.scratch[o];y+=this.scratch[o+1];z+=this.scratch[o+2];k++;
++        }
++        if(!k)continue;
++        const o=i*3,l=Math.hypot(x,y,z);
++        if(l<1e-9)continue;
++        n[o]=x/l;n[o+1]=y/l;n[o+2]=z/l;
++      }
++    }
+     if(this.count===0){this.bounds.center=[0,0,0];this.bounds.radius=0;return;}
+     this.bounds.center=[(minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2];
+     this.bounds.radius=Math.hypot(maxX-minX,maxY-minY,maxZ-minZ)/2;
+diff --git a/src/scene/world.ts b/src/scene/world.ts
+index 74a6248..d3e5fcb 100644
+--- a/src/scene/world.ts
++++ b/src/scene/world.ts
+@@ -4,31 +4,67 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+ import { PuddingSurface } from '../pudding/surface.ts';
+ import { surfaceAttributes } from '../pudding/attributes.ts';
+ import { buildChunk } from '../pudding/chunk.ts';
++import { CAT_YAW } from '../physics/mesh.ts';
+ import type { VolumeMesh } from '../physics/mesh.ts';
+ import { SPOON_RADII, SPOON_RIM, SPOON_YAW } from '../physics/soft-body.ts';
+ import type { Bite } from '../physics/soft-body.ts';
+ import { buildSpoon } from './spoon-mesh.ts';
+ import type { Simulation } from '../physics/simulation.ts';
+ 
++export type FaceInk={eye:string;mouth:string;blush:string;rim?:string};
++export type Finish={roughness:[number,number];clearcoat:[number,number];metalness:number};
++const defaultFace:FaceInk={eye:'#493021',mouth:'#71503b',blush:'#e9aa8760'};
++const defaultFinish:Finish={roughness:[.46,.36],clearcoat:[.14,.25],metalness:0};
++/**
++ * Five puddings. `body/top/cut` colour the custard, the glaze and a fresh cut; `face` repaints the
++ * canvas-drawn cat face (dark bodies need light ink); `finish` retunes the surface so cocoa reads
++ * matte and cyber reads metallic.
++ */
++/** Builds one flavour entry; the helper keeps the numeric tuples typed without casting at each site. */
++function recipe(body:string,top:string,cut:string,face:FaceInk,finish:Finish) {
++  return {body,top,cut,face,finish};
++}
+ export const flavors={
+-  vanilla:{body:'#fff1dc',top:'#d7a15f',cut:'#fff4e4'},
+-  berry:{body:'#e4aaa6',top:'#81283e',cut:'#f2c9c4'},
+-  matcha:{body:'#acbb79',top:'#4c642c',cut:'#c3cf98'},
++  vanilla:recipe('#fff1dc','#d7a15f','#fff4e4',defaultFace,defaultFinish),
++  berry:recipe('#e4aaa6','#81283e','#f2c9c4',defaultFace,defaultFinish),
++  matcha:recipe('#acbb79','#4c642c','#c3cf98',defaultFace,defaultFinish),
++  // 黑金: glossy black body, gold glaze and ears.
++  cocoa:recipe('#191920','#f2c14e','#6b5220',{eye:'#1a1208',rim:'#f2c14e',mouth:'#d9b56a',blush:'#c9962f47'},{roughness:[.3,.22],clearcoat:[.55,.72],metalness:.3}),
++  // 赛博: neon magenta-violet, glossy all over.
++  cyber:recipe('#4a0f6b','#ff2fb9','#a24bff',{eye:'#1a1208',rim:'#ff2fb9',mouth:'#ffc9f2',blush:'#ff2fb94d'},{roughness:[.18,.14],clearcoat:[.7,.85],metalness:.2}),
+ };
+ export type Flavor=keyof typeof flavors;
+ const SERVE_SECONDS=1.35;
+-export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+-  if(!navigator.gpu)throw new Error('This browser cannot serve WebGPU yet. Open this page in a WebGPU-enabled browser.');
+-  const adapter=await navigator.gpu.requestAdapter();
+-  if(!adapter)throw new Error('No WebGPU adapter is available. Please check hardware acceleration and try again.');
+-  const renderer=new THREE.WebGPURenderer({canvas,antialias:true,alpha:false});
++const lastSize=[0,0];
++/** Probes WebGL 2, the fallback backend used where WebGPU is unavailable (for example inside Android WebView). */
++function supportsWebGL2():boolean {
++  try {return typeof document!=='undefined'&&!!document.createElement('canvas').getContext('webgl2');}
++  catch{return false;}
++}
++/** WebGPU when the browser can serve it, otherwise the WebGL 2 backend of the same renderer. */
++async function createRenderer(canvas:HTMLCanvasElement):Promise<THREE.WebGPURenderer> {
++  // QA switch: append ?webgl to the page URL to exercise the fallback backend on a real device.
++  const forceWebGL=typeof location!=='undefined'&&new URLSearchParams(location.search).has('webgl');
++  let adapter:unknown;
++  if(navigator.gpu&&!forceWebGL)try{adapter=await navigator.gpu.requestAdapter();}catch{adapter=null;}
++  if(adapter) {
++    const renderer=new THREE.WebGPURenderer({canvas,antialias:true,alpha:false});
++    await renderer.init();
++    if((renderer.backend as {isWebGPUBackend?:boolean}).isWebGPUBackend===true)return renderer;
++    renderer.dispose();
++  }
++  if(!supportsWebGL2())throw new Error('This browser cannot serve WebGPU yet. Open this page in a WebGPU-enabled browser.');
++  const renderer=new THREE.WebGPURenderer({canvas,antialias:true,alpha:false,forceWebGL:true});
+   await renderer.init();
+-  if((renderer.backend as {isWebGPUBackend?:boolean}).isWebGPUBackend!==true) {renderer.dispose();throw new Error('A native WebGPU renderer is required.');}
++  return renderer;
++}
++export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
++  const renderer=await createRenderer(canvas);
+   const touchQuality=window.matchMedia('(pointer: coarse)').matches;
+-  const pixelRatioCap=touchQuality?1:1.5,shadowSize=touchQuality?512:1024;
++  const pixelRatioCap=touchQuality?3:2,shadowSize=touchQuality?1024:2048;
+   renderer.setPixelRatio(Math.min(window.devicePixelRatio,pixelRatioCap));
+   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;
+-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;
++  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+   const scene=new THREE.Scene();scene.background=new THREE.Color('#f1e9df');scene.fog=new THREE.Fog('#f1e9df',10,24);
+   const camera=new THREE.PerspectiveCamera(31,1,.1,50);
+   camera.position.set(3.4,2.15,6.8);camera.lookAt(0,.67,0);
+@@ -37,7 +73,7 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+   const light=new THREE.DirectionalLight('#fff4db',2.2);light.position.set(-3,7,3);light.castShadow=true;
+   light.shadow.mapSize.set(shadowSize,shadowSize);light.shadow.camera.left=-3;light.shadow.camera.right=3;
+   light.shadow.camera.top=3;light.shadow.camera.bottom=-3;light.shadow.camera.near=.5;light.shadow.camera.far=15;
+-  light.shadow.normalBias=.012;light.shadow.bias=-.00015;light.shadow.radius=4;light.shadow.blurSamples=touchQuality?4:8;scene.add(light);
++  light.shadow.normalBias=.02;light.shadow.bias=-.0002;scene.add(light);
+   const fill=new THREE.HemisphereLight('#fff9e7','#b7b9a7',.6);scene.add(fill);
+   const ground=new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshStandardNodeMaterial({color:'#ece1d2',roughness:1}));
+   ground.rotation.x=-Math.PI/2;ground.position.y=-.006;ground.receiveShadow=true;scene.add(ground);
+@@ -50,18 +86,37 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+     geometry.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage));
+     geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3).setUsage(THREE.DynamicDrawUsage));
+     const {cut}=surfaceAttributes(skin,mesh);
+-    const glaze=new Float32Array(skin.count),faceUV=new Float32Array(skin.count*2);
++    const glaze=new Float32Array(skin.count),faceUV=new Float32Array(skin.count*2),faceMask=new Float32Array(skin.count);
++    // The face used to wrap around the body through atan2, which has a branch cut: triangles crossing
++    // that meridian interpolated across the whole texture and squeezed the face into a one-pixel streak
++    // down the cat's back. A linear u has no wrap at all, and `faceMask` keeps the face on the front
++    // hemisphere, so nothing to duplicate and nothing to tear.
++    //
++    // The decal is addressed in the cat's own frame, not world space. The silhouette is yawed by
++    // CAT_YAW, so a world-x u slid the whole face sideways along the body — it sat about a seventh of
++    // a body-width off-centre and pushed one eye against the silhouette, where perspective squashed
++    // it and dropped it below the other. Both axes go through the yaw, which makes the face mirror
++    // symmetric about the body's own centre line again.
++    const ca=Math.cos(CAT_YAW),sa=Math.sin(CAT_YAW);
++    const bodyX=new Float64Array(skin.count),bodyZ=new Float64Array(skin.count);
++    let maxX=0,maxZ=0;
++    for(let i=0;i<skin.count;i++) {
++      const x=skin.rest[i*3],z=skin.rest[i*3+2];
++      bodyX[i]=x*ca-z*sa;bodyZ[i]=x*sa+z*ca;
++      maxX=Math.max(maxX,Math.abs(bodyX[i]));maxZ=Math.max(maxZ,Math.abs(bodyZ[i]));
++    }
+     // Bind the patch and face to rest coordinates on every rebuilt skin and served bite.
+     for(let i=0;i<skin.count;i++) {
+-      const x=skin.rest[i*3],y=skin.rest[i*3+1],z=skin.rest[i*3+2];
+-      const localX=x*Math.cos(.44)-z*Math.sin(.44);
++      const y=skin.rest[i*3+1];
+       const t=THREE.MathUtils.clamp((y-1.29)/.24,0,1);
+-      const side=THREE.MathUtils.smoothstep(localX,.35,.67);
++      const side=THREE.MathUtils.smoothstep(bodyX[i],.35,.67);
+       glaze[i]=t*t*(3-2*t)*side*(1-cut[i]);
+-      faceUV[i*2]=.5+(Math.atan2(x,z)-.44)/(2*Math.PI);
++      faceUV[i*2]=.5+bodyX[i]/(4*maxX);
+       faceUV[i*2+1]=y/mesh.height;
++      faceMask[i]=THREE.MathUtils.smoothstep(bodyZ[i]/maxZ,-.15,.3);
+     }
+     geometry.setAttribute('uv',new THREE.BufferAttribute(faceUV,2));
++    geometry.setAttribute('face',new THREE.BufferAttribute(faceMask,1));
+     geometry.setAttribute('glaze',new THREE.BufferAttribute(glaze,1));geometry.setAttribute('cut',new THREE.BufferAttribute(cut,1));
+     geometry.boundingSphere=new THREE.Sphere(new THREE.Vector3(...skin.bounds.center),skin.bounds.radius);return geometry;
+   }
+@@ -71,20 +126,49 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+   const faceCanvas=document.createElement('canvas');faceCanvas.width=2048;faceCanvas.height=1024;
+   const pen=faceCanvas.getContext('2d')!;
+   function oval(u:number,v:number,rx:number,ry:number,color:string){pen.fillStyle=color;pen.beginPath();pen.ellipse(u*2048,(1-v)*1024,rx*2048,ry*1024,0,0,Math.PI*2);pen.fill();}
+-  for(const u of [.428,.572]){oval(u,.72,.014,.075,'#493021');oval(u-.004,.748,.0035,.018,'#fffbed');}
+-  // Soft radial blush avoids a hard makeup-like outline.
+-  for(const u of [.394,.606]){const x=u*2048,y=(1-.59)*1024;const blush=pen.createRadialGradient(x,y,0,x,y,48);blush.addColorStop(0,'#e9aa8760');blush.addColorStop(1,'#e9aa8700');pen.fillStyle=blush;pen.fillRect(x-48,y-48,96,96);}
+-  pen.strokeStyle='#71503b';pen.lineWidth=8;pen.lineCap='round';pen.beginPath();
+-  pen.moveTo(976,377);pen.bezierCurveTo(990,393,1010,391,1024,368);pen.bezierCurveTo(1038,391,1058,393,1072,377);pen.stroke();
+-  const faceMap=new THREE.CanvasTexture(faceCanvas);faceMap.colorSpace=THREE.SRGBColorSpace;faceMap.anisotropy=8;
++  /**
++   * The catchlight has to contrast with the iris: a cream dot inside a cream iris reads as a blank
++   * eye on dark puddings, so light eyes get a dark spark instead.
++   */
++  function catchlight(eye:string) {
++    const n=parseInt(eye.slice(1),16),r=(n>>16)&255,g=(n>>8)&255,b=n&255;
++    return (r*.299+g*.587+b*.114)/255>.62?'#241a10':'#fffdf6';
++  }
++  /**
++   * Repaints the cat face. Light puddings use a dark iris with a cream catchlight; dark puddings wear
++   * a flavour-coloured ring around a dark iris (the `rim`), which keeps the eyes readable against a
++   * black or violet body while staying true to the original design.
++   */
++  function drawFace(face:FaceInk) {
++    pen.clearRect(0,0,faceCanvas.width,faceCanvas.height);
++    const spark=catchlight(face.eye);
++    for(const u of [.428,.572]) {
++      if(face.rim){oval(u,.72,.014,.075,face.rim);oval(u,.72,.0104,.056,'#1a1208');oval(u-.004,.748,.0035,.018,'#fffdf6');}
++      else{oval(u,.72,.014,.075,face.eye);oval(u-.004,.748,.0035,.018,spark);}
++    }
++    // Soft radial blush avoids a hard makeup-like outline.
++    for(const u of [.394,.606]){const x=u*2048,y=(1-.59)*1024;const blush=pen.createRadialGradient(x,y,0,x,y,48);blush.addColorStop(0,face.blush);blush.addColorStop(1,face.blush.slice(0,7)+'00');pen.fillStyle=blush;pen.fillRect(x-48,y-48,96,96);}
++    pen.strokeStyle=face.mouth;pen.lineWidth=8;pen.lineCap='round';pen.beginPath();
++    pen.moveTo(976,377);pen.bezierCurveTo(990,393,1010,391,1024,368);pen.bezierCurveTo(1038,391,1058,393,1072,377);pen.stroke();
++  }
++  drawFace(defaultFace);
++  // No mipmaps: the face is a thin, high-contrast decal and trilinear filtering softens it.
++  const faceMap=new THREE.CanvasTexture(faceCanvas);
++  faceMap.colorSpace=THREE.SRGBColorSpace;
++  faceMap.anisotropy=8;
++  faceMap.generateMipmaps=false;
++  faceMap.minFilter=THREE.LinearFilter;
+   const faceInk=texture(faceMap);
+   // Cut custard is matte and slightly torn: two octaves of noise in rest-ish space break up colour and roughness.
+   const grain=mx_noise_float(positionLocal.mul(9)).mul(.6).add(mx_noise_float(positionLocal.mul(27)).mul(.4));
+   const torn=grain.mul(.5).add(.5);
+   const custard=mix(mix(bodyColor,topColor,g),mix(cutColor,bodyColor,torn.mul(.45)),c);
+   // Fresh cut surfaces keep their custard shading rather than inheriting face ink.
+-  material.colorNode=mix(custard,faceInk.rgb,faceInk.a.mul(c.oneMinus()));
+-  material.roughnessNode=mix(mix(.46,.36,g),torn.mul(.28).add(.5),c);material.clearcoatNode=mix(mix(.14,.25,g),.03,c);
++  const face=attribute<'float'>('face','float');
++  material.colorNode=mix(custard,faceInk.rgb,faceInk.a.mul(face).mul(c.oneMinus()));
++  const rough=uniform(new THREE.Vector2(...defaultFinish.roughness)),coat=uniform(new THREE.Vector2(...defaultFinish.clearcoat));
++  material.roughnessNode=mix(mix(rough.x,rough.y,g),torn.mul(.28).add(.5),c);
++  material.clearcoatNode=mix(mix(coat.x,coat.y,g),.03,c);
+   material.clearcoatRoughness=.38;
+   let skin=new PuddingSurface(sim.body.mesh),skinVersion=sim.body.version;
+   const pudding=new THREE.Mesh(skinGeometry(skin,sim.body.mesh,skin.positions,skin.normals),material);pudding.castShadow=true;pudding.receiveShadow=true;scene.add(pudding);
+@@ -120,12 +204,47 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+     plate.remove(serving.chunk);serving.chunk.geometry.dispose();serving=null;lift.set(0,0,0);
+   }
+   const targetBody=new THREE.Color(flavors.vanilla.body),targetTop=new THREE.Color(flavors.vanilla.top),targetCut=new THREE.Color(flavors.vanilla.cut);
+-  function flavor(name:Flavor){targetBody.set(flavors[name].body);targetTop.set(flavors[name].top);targetCut.set(flavors[name].cut);}
++  let drawnFace:FaceInk=defaultFace;
++  function flavor(name:Flavor){
++    const f=flavors[name];
++    targetBody.set(f.body);targetTop.set(f.top);targetCut.set(f.cut);
++    if(drawnFace!==f.face){drawnFace=f.face;drawFace(f.face);faceMap.needsUpdate=true;}
++    rough.value.set(...f.finish.roughness);coat.value.set(...f.finish.clearcoat);
++    material.metalness=f.finish.metalness;
++  }
+   function resize() {
+-    const {width,height}=canvas.getBoundingClientRect();renderer.setSize(width,height,false);camera.aspect=width/height;
++    // Rotation hands us a zero-sized frame; painting that would blank the canvas for good.
++    const {width,height}=canvas.getBoundingClientRect();
++    if(width<2||height<2)return;
++    lastSize[0]=Math.round(width);lastSize[1]=Math.round(height);
++    // three r185 的 WebGPURenderer.setSize(w,h,false) 在部分 WebView 里不会把逻辑尺寸写进画布
++    // （getSize 停在默认 300×150，缓冲区停在 300×150×DPR），画面会被拉伸成糊的。这里显式对齐绘制缓冲。
++    const ratio=renderer.getPixelRatio(),bufferW=Math.floor(width*ratio),bufferH=Math.floor(height*ratio);
++    renderer.setSize(width,height,false);
++    if(canvas.width!==bufferW||canvas.height!==bufferH) {canvas.width=bufferW;canvas.height=bufferH;}
++    renderer.setViewport(0,0,width,height);
++    const aspect=width/height;camera.aspect=aspect;
++    const wide=aspect>=1;
++    // A narrow viewport sees less horizontally at a fixed vertical FOV, which crops the cat at the
++    // sides. Dolly back until the horizontal framing matches the portrait composition again.
++    const dolly=Math.min(1.45,Math.max(1,.55/aspect));
+     if(width>1280)camera.setViewOffset(width,height,-width*.035,-height*.09,width,height);
+-    else camera.setViewOffset(width,height,0,-height*.125,width,height);
+-    camera.position.set(3.4,2.15,width>1280?6.8:7.7);camera.lookAt(0,.67,0);camera.updateProjectionMatrix();
++    // Phones share one framing: the landscape pane is wider, so the cat keeps the same share of the
++    // stage in both orientations instead of shrinking into the short side.
++    else camera.setViewOffset(width,height,0,-height*.1,width,height);
++    const base=width>1280?6.8:7.7;
++    // Look straight down the cat's own centre line. A couple of degrees off-axis is enough to foreshorten
++    // one eye more than the other, which reads as an uneven face even when the decal is symmetric.
++    const dist=base*dolly;
++    camera.position.set(Math.sin(CAT_YAW)*dist,2.15,Math.cos(CAT_YAW)*dist);camera.lookAt(0,.67,0);camera.updateProjectionMatrix();
++  }
++  /**
++   * Re-frames when the canvas size changed (rotation, window resize). Both sides are rounded to
++   * whole pixels: comparing a fractional rect against a rounded client size would differ every
++   * frame and re-allocate the drawing buffer, which softens the silhouette.
++   */
++  function keepFramed() {
++    if(canvas.clientWidth!==lastSize[0]||canvas.clientHeight!==lastSize[1])resize();
+   }
+   const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
+   // Warm every pipeline the spoon and a served bite will need, so the first press does not stall on compilation.
+@@ -158,9 +277,9 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+     bodyColor.value.lerp(targetBody,k);topColor.value.lerp(targetTop,k);cutColor.value.lerp(targetCut,k);
+   }
+   function dispose(){observer.disconnect();renderer.setAnimationLoop(null);finishServing();pudding.geometry.dispose();faceMap.dispose();material.dispose();wire.material.dispose();steel.dispose();cutlery.dispose();ground.geometry.dispose();ground.material.dispose();grid.geometry.dispose();(grid.material as THREE.Material).dispose();envTarget.dispose();light.shadow.dispose();renderer.dispose();}
+-  const info=adapter.info;
++  const info={vendor:'',architecture:'',device:'',description:'',...((renderer.backend as {adapter?:{info?:Record<string,string>}}).adapter?.info??{})};
+   return {
+-    renderer,scene,camera,pudding,wire,spoon,spoonTarget,flavor,update,dispose,serve,
++    renderer,scene,camera,pudding,wire,spoon,spoonTarget,flavor,update,keepFramed,dispose,serve,
+     get skin(){return skin;},
+     get serving(){return serving!==null;},
+     /** Nose-down angle requested by the interaction; the scene eases toward it. */
+@@ -169,7 +288,7 @@ export async function createWorld(canvas:HTMLCanvasElement,sim:Simulation) {
+     /** Wireframe visibility follows the toggle but never shows an empty cage. */
+     set mesh(visible:boolean){showMesh=visible;wire.visible=visible&&!sim.body.empty;},
+     get mesh(){return showMesh;},
+-    deviceInfo:{backend:'WebGPU',adapter:{vendor:info.vendor,architecture:info.architecture,device:info.device,description:info.description},userAgent:navigator.userAgent,dpr:renderer.getPixelRatio(),three:THREE.REVISION,quality:touchQuality?'touch':'desktop',shadowSize},
++    deviceInfo:{backend:(renderer.backend as {isWebGPUBackend?:boolean}).isWebGPUBackend?'WebGPU':'WebGL2',adapter:{vendor:info.vendor,architecture:info.architecture,device:info.device,description:info.description},userAgent:navigator.userAgent,dpr:renderer.getPixelRatio(),three:THREE.REVISION,quality:touchQuality?'touch':'desktop',shadowSize},
+   };
+ }
+ export type World=Awaited<ReturnType<typeof createWorld>>;
+diff --git a/src/styles.css b/src/styles.css
+index 45598b7..af52c94 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -1,69 +1,192 @@
+-:root{font-family:Arial,Helvetica,sans-serif;color:#26302e;background:#e9e7e1;font-synthesis:none;font-size:13px;color-scheme:light}
+-*{box-sizing:border-box}body{margin:0}button,input,summary,a{-webkit-tap-highlight-color:transparent}button,input{font:inherit}button{cursor:pointer;color:inherit}button:disabled{cursor:wait;opacity:.5}button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid #96713e;outline-offset:5px}button{transition:background .2s,transform .2s}button:active{transform:translateY(1px)}[hidden]{display:none!important}
+-#app{min-height:100svh;position:relative;overflow:hidden}#stage{position:absolute;inset:0;height:100svh}#scene{width:100%;height:100%;display:block;touch-action:none;cursor:grab}#scene.grabbing{cursor:grabbing}#scene.spoon{cursor:none}#scene-message{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);text-align:center;color:#746f64;letter-spacing:.03em;max-width:340px;line-height:1.7;pointer-events:none}#scene-message span{display:block;width:28px;height:1px;background:#a7854a;margin:16px auto;animation:pulse 1s ease-in-out infinite alternate}#retry{position:absolute;left:50%;top:65%;transform:translateX(-50%);border:1px solid #b8b7af;background:#f5f3ed;padding:10px 24px;border-radius:20px}
+-.masthead{position:absolute;left:3.7%;right:3.7%;top:35px;z-index:2;display:flex;justify-content:space-between;align-items:center;font-size:9px;letter-spacing:2.9px;font-weight:600;pointer-events:none;color:#737b75}.masthead i{font-style:normal;margin:0 13px;color:#a5aaa3}.status{display:flex;align-items:center;gap:9px;font-size:9px;letter-spacing:2.1px;color:#424d47}.status b{height:6px;width:6px;border-radius:50%;background:#b4a079;box-shadow:0 0 0 4px #b4a0790d}.status.live b{background:#609078;box-shadow:0 0 0 4px #60907810}.status.failed b{background:#bd7859}
+-.intro{position:absolute;left:3.55%;top:77px;z-index:2;pointer-events:none}.intro h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:clamp(78px,7.9vw,125px);letter-spacing:-.065em;line-height:.86;margin:0}.intro h1 em{font-weight:400;letter-spacing:-.07em}.intro p{color:#747a72;font-size:12px;line-height:1.65;margin:29px 0 0 4px}
+-.caption{position:absolute;left:3.7%;bottom:70px;z-index:2;pointer-events:none}.caption p{margin:0 0 5px;font-size:12px}.caption>span{color:#7c827b;font-size:12px}.readings{display:flex;gap:28px;margin-top:27px}.readings>div{display:flex;flex-direction:column;gap:8px}.readings output{font-family:'Courier New',monospace;font-size:17px;letter-spacing:-.4px}.readings small{font-size:7px;letter-spacing:1.7px;color:#7b8279}.readings #state{font-size:14px;padding-top:3px}
+-.controls{position:absolute;right:3.3%;bottom:69px;z-index:3;width:286px;padding:25px 23px 15px;border:1px solid #fff9;background:#f9faf7e8;border-radius:20px;box-shadow:0 12px 45px #4f554b07;backdrop-filter:blur(18px)}.panel-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.panel-heading h2{font-size:9px;letter-spacing:2.2px;font-weight:700;margin:0}.panel-heading>span{font-family:monospace;font-size:9px;color:#969b90;letter-spacing:1px}.flavors{display:flex;gap:6px;margin-bottom:23px}.flavors button{border:1px solid transparent;border-radius:20px;background:#edefe8;padding:8px 9px;display:flex;align-items:center;gap:5px;font-size:10px;white-space:nowrap}.flavors button[aria-pressed=true]{border-color:#656e61;background:#fafbf7}.flavors button:hover{background:#e5e7dd}.flavors i{display:block;width:5px;height:5px;border-radius:50%;background:#bf9850}.flavors [data-flavor=berry] i{background:#ab5760}.flavors [data-flavor=matcha] i{background:#77986b}
+-.slider-label{display:flex;justify-content:space-between;font-size:11px;margin-bottom:12px}.slider-label output{color:#858c80;font-size:10px}input[type=range]{display:block;appearance:none;width:100%;height:4px;background:linear-gradient(to right,#2d3830 45%,#d7dcd1 45%);border-radius:5px;margin:0 0 25px;cursor:pointer}#damping{background:linear-gradient(to right,#2d3830 38%,#d7dcd1 38%)}input[type=range]::-webkit-slider-thumb{appearance:none;background:#2d3830;width:13px;height:13px;border-radius:50%;border:2px solid #2d3830}input[type=range]::-moz-range-thumb{background:#2d3830;width:12px;height:12px;border:0;border-radius:50%}
+-.tools{display:flex;gap:6px;margin:0 0 12px}.tools button{border:1px solid transparent;border-radius:20px;background:#edefe8;padding:8px 10px;font-size:10px;white-space:nowrap;flex:1}.tools button[aria-pressed=true]{border-color:#656e61;background:#fafbf7}.tools button:hover{background:#e5e7dd}.tools #bite{flex:1.35;border-color:#d7dcd3;background:transparent}.tools #bite:hover{background:#eceee5}
+-.actions{display:flex;gap:7px;margin:1px 0 17px}.actions button{height:38px;border-radius:8px;border:1px solid #d7dcd3;background:transparent;font-size:11px;flex:1}.actions #nudge{flex:1.55;background:#2b3630;color:#f8f8ed;border-color:#2b3630}.actions #nudge:hover{background:#455347}.actions #nudge span{margin-left:7px;opacity:.65}.actions #reset:hover{background:#eceee5}.toggles{display:flex;align-items:center;justify-content:space-between;font-size:9px;color:#6c776a;margin-bottom:16px;gap:6px}.toggles label{display:flex;gap:4px;align-items:center;cursor:pointer;white-space:nowrap}.toggles input{width:11px;height:11px;margin:0;accent-color:#384a3c;cursor:pointer}.toggles button{font-size:9px;border:1px solid #d7dcd3;border-radius:13px;background:transparent;padding:4px 9px}.toggles button[aria-pressed=true]{background:#e2e7d9}
+-details{border-top:1px solid #dde1d6;padding-top:14px;font-size:10px;color:#73806e}summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center}summary::-webkit-details-marker{display:none}summary span{font-size:15px;line-height:12px}details[open] summary span{transform:rotate(45deg)}details p{line-height:1.6;font-size:11px;margin:13px 0}details small{font-size:8px;letter-spacing:1px}.inspect-link{display:block;color:#68745f;margin-top:13px;font-size:9px;text-decoration:none}
+-footer{position:absolute;bottom:24px;left:3.7%;right:3.7%;z-index:2;font-size:7px;letter-spacing:1.6px;color:#858b81;pointer-events:none}footer span{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap}#diagnostics{position:relative;margin:100svh 25px 25px;background:#fafbf7;padding:24px;border-radius:16px;z-index:5}#diagnostics pre{white-space:pre-wrap;font-size:11px}#diagnostics button{border:1px solid #aab59f;border-radius:8px;padding:9px;margin:5px}#benchmark-status{padding:12px}
+-@keyframes pulse{to{opacity:.3;transform:scaleX(.45)}}
+-@media(min-width:1700px){.controls{width:310px;padding:28px}.flavors{gap:10px}.flavors button{padding:8px 11px}}
+-@media(max-width:1280px){.masthead{left:6%;right:6%;top:24px;font-size:7px;letter-spacing:1.8px}.masthead i{margin:0 5px}.status{font-size:7px;letter-spacing:1px;gap:6px}.intro{left:5.5%;top:66px}.intro h1{font-size:78px}.intro p{font-size:11px;line-height:1.55;margin-top:20px}#stage{position:relative;height:650px;max-height:80svh;min-height:560px}.caption{position:relative;left:auto;bottom:auto;text-align:center;margin:-56px 20px 26px}.caption .readings{justify-content:center;gap:31px;margin-top:24px}.caption>span{font-size:11px}.controls{position:relative;right:auto;bottom:auto;width:calc(100% - 40px);max-width:420px;margin:0 auto 52px;padding:24px}.panel-heading{margin-bottom:18px}.flavors{gap:8px}.flavors button{flex:1;justify-content:center;font-size:11px}.toggles{font-size:11px}.toggles button{font-size:10px}.controls details{font-size:11px}footer{position:relative;left:auto;right:auto;bottom:auto;text-align:center;margin:0 20px 24px;font-size:6px}footer span{display:none}#diagnostics{margin:20px}.readings output{font-size:16px}}
+-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+-#diagnostics{position:fixed;top:80px;left:24px;max-width:430px;max-height:75vh;overflow:auto;margin:0;box-shadow:0 8px 40px #30352a20}#inspector-toggle{position:fixed;right:4%;top:58px;z-index:6;border:1px solid #b5baa9;border-radius:12px;background:#fafaf2;padding:6px 10px;font-size:10px}
+-@media(max-width:1280px){html{scrollbar-width:none}html::-webkit-scrollbar{display:none}.flavors button{min-height:36px}.tools button{min-height:36px;font-size:11px}.actions button{height:44px}.toggles label{min-height:30px}.toggles input{width:15px;height:15px}input[type=range]{height:20px;background-size:100% 4px!important;background-repeat:no-repeat!important;background-position:center!important;margin-bottom:17px}input[type=range]::-webkit-slider-thumb{width:20px;height:20px}#diagnostics{max-width:calc(100vw - 48px)}}
+-
+-.squish{width:100%;margin:15px 0 0;padding:12px 8px;border:0;border-radius:7px;background:#a36a3f;color:#fff8ed;font:inherit;cursor:pointer}.squish:hover{background:#885431}.squish:disabled{opacity:.5;cursor:wait}
+-
+-.intro h1{color:#63412e}.intro h1 em{color:#ad7d53}
+-
+-/* Discoverable play controls and touch-friendly tuning. */
+-.controls{width:320px;padding:20px;max-height:calc(100svh - 120px);overflow:auto;scroll-margin-top:20px}
+-.panel-heading{margin-bottom:12px}.panel-heading h2{font-size:12px;letter-spacing:1px}.flavors{margin-bottom:18px}.flavors button{min-height:36px;flex:1;justify-content:center;font-size:12px}
+-.play-heading{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:#63412e;margin:0 0 10px}.play-heading>span{font-size:11px;font-weight:400;color:#897968}
+-.tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0}.tools button{position:relative;min-height:68px;padding:12px 6px;border:1px solid #d8cbb9;border-radius:12px;background:#fffaf3;white-space:normal}.tools button strong{display:block;font-size:15px}.tools button small{display:block;font-size:10px;margin-top:7px;color:#7b6b5e}.tools button[aria-pressed=true]{background:#f4e5d1;border:2px solid #a36a3f;padding:11px 5px}.tools button:hover{background:#f4e5d1}
+-.tool-hint{font-size:11px;color:#796957;line-height:1.6;min-height:18px;margin:8px 0 10px}
+-.bite-button{width:100%;min-height:46px;display:flex;align-items:center;justify-content:space-between;border:1px solid #a36a3f;border-radius:10px;padding:10px 13px;background:#a36a3f;color:#fffaf2}.bite-button strong{font-size:15px}.bite-button span{font-size:11px}.bite-button:hover{background:#885431}
+-.tuning{margin-top:17px;padding:14px 13px 6px;background:#f1e9dd;border-radius:12px}.slider-label{font-size:13px;align-items:center;margin-bottom:0}.slider-label output{font-size:12px;color:#83552f;font-variant-numeric:tabular-nums;background:#fffaf3;border-radius:6px;padding:4px 7px;min-width:72px;text-align:center}
+-.controls input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:38px;margin:0;cursor:ew-resize;background:linear-gradient(to right,#a36a3f var(--fill,50%),#d3c5b3 var(--fill,50%)) center/100% 8px no-repeat!important;border-radius:0;touch-action:pan-y}
+-.controls input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fffaf3;border:3px solid #a36a3f;box-shadow:0 2px 5px #63412e30}.controls input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fffaf3;border:3px solid #a36a3f;box-shadow:0 2px 5px #63412e30}
+-.range-ends{display:flex;justify-content:space-between;color:#897968;font-size:10px;margin:-2px 0 12px}.squish{margin-top:12px;min-height:44px;background:#efe3d3;color:#63412e;border:1px solid #d6bea2}.squish:hover{background:#e5d3ba}.actions{margin-top:8px;margin-bottom:12px}.actions button{min-height:44px}.toggles{margin-bottom:10px}.toggles label,.toggles button{min-height:36px}.toggles button{padding:6px 10px}.discover-controls{display:none}
+-@media(max-width:1280px){.controls{width:calc(100% - 32px);max-width:420px;max-height:none;overflow:visible;padding:20px;margin-bottom:36px}.discover-controls{display:inline-flex;align-items:center;min-height:44px;padding:10px 16px;margin-top:12px;pointer-events:auto;text-decoration:none;background:#a36a3f;color:#fffaf3;border-radius:22px;font-size:13px}.caption .readings{margin-top:16px}.controls .tools button{min-height:72px}.controls .flavors button{min-height:44px}.toggles label,.toggles button{min-height:44px}}
+-
+-/* Keep mode switching and recovery within reach while touching the cat. */
+-.mobile-playbar{display:none}
+-@media(max-width:1280px){
+- #app{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+- .mobile-playbar{display:block;position:fixed;z-index:7;bottom:0;left:0;right:0;padding:9px 12px calc(10px + env(safe-area-inset-bottom,0px));background:#fffaf3f5;border-top:1px solid #d8cbb9;box-shadow:0 -4px 20px #63412e0c}
+- .mobile-playbar p{font-size:11px;line-height:18px;text-align:center;margin:0 0 7px;color:#795b42;min-height:18px}
+- .mobile-playbar>div{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:480px;margin:auto}
+- .mobile-playbar button{min-height:56px;border:1px solid #d8cbb9;background:#fffaf3;border-radius:12px;padding:7px 2px;color:#63412e}
+- .mobile-playbar button strong{display:block;font-size:14px}.mobile-playbar button small{display:block;margin-top:4px;font-size:10px}
+- .mobile-playbar button[aria-pressed=true]{background:#a36a3f;border-color:#a36a3f;color:#fffaf3}
+- #mobile-reset{background:#efe3d3}
+- .discover-controls{font-size:12px}
++/* squee · 猫咪牛奶布丁 — 极简界面样式
++ * 页面只有三层：整屏 3D 舞台、顶部一句玩法提示、底部一排口味色板，外加右上角的猫头复原按钮。
++ * 竖屏：文案在顶部，色板在底部；横屏：文案与色板整体移到左栏，猫留在右栏。
++ * 字库是按需子集化的站酷快乐体（14KB），缺字自动回落到系统无衬线。 */
++@font-face {
++  font-family: 'SqueeRound';
++  src: url('./fonts/squee-round.woff2') format('woff2');
++  font-weight: 400;
++  font-style: normal;
++  font-display: swap;
+ }
+ 
+-/* Mobile-only visual controls; desktop retains its existing layout. */
+-.play-icon,.mobile-method-title{display:none}
+-@media(max-width:1280px){
+- .intro{top:64px}.intro h1{font-size:52px;line-height:.9}.intro p{font-size:10px;margin-top:14px}
+- .desktop-method-title{display:none}.mobile-method-title{display:inline;font-weight:700}
+- .play-icon{display:block;width:30px;height:30px;margin:0 auto 5px;flex-shrink:0}
+- .controls .tools button{padding:10px 5px}.controls .tools button[aria-pressed=true]{padding:9px 4px}
+- .controls .tools button strong{font-size:13px}.controls .tools button small{margin-top:4px}
+- .flavors{justify-content:center;gap:20px;margin:4px 0 18px}
+- .controls .flavors button{flex:0 1 72px;display:flex;flex-direction:column;gap:7px;border:0;border-radius:12px;background:transparent!important;padding:6px;font-size:11px;min-height:70px}
+- .controls .flavors i{position:relative;width:38px;height:38px;border-radius:50%;border:1px solid #b8a48a70;box-shadow:0 2px 5px #63412e10;background:#fff6dc}
+- .controls .flavors [data-flavor=berry] i{background:#dfa0aa}.controls .flavors [data-flavor=matcha] i{background:#a9bd86}
+- .controls .flavors button[aria-pressed=true] i{outline:2px solid #8c603e;outline-offset:4px}
+- .controls .flavors button[aria-pressed=true] i::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;color:#63412e;font-size:18px}
+- .mobile-playbar button{display:grid;grid-template-columns:30px auto;align-content:center;justify-content:center;column-gap:7px;min-height:58px}
+- .mobile-playbar .play-icon{grid-row:1/3;align-self:center;margin:0;width:28px;height:28px}
+- .mobile-playbar button strong{font-size:13px}.mobile-playbar button small{font-size:9px;margin-top:4px}
++:root {
++  --stage: #f1e9df;
++  --panel: #f9faf7e8;
++  --line: #ffffffaa;
++  --ink: #4d564e;
++  --muted: #8d8779;
++  --round: 'SqueeRound', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', system-ui, sans-serif;
++  font-family: var(--round);
++  font-synthesis: none;
++  font-size: 13px;
++  color: var(--ink);
++  color-scheme: light;
++  -webkit-tap-highlight-color: transparent;
+ }
+-@media(max-width:350px){.mobile-playbar button{column-gap:3px;grid-template-columns:24px auto}.mobile-playbar .play-icon{width:24px;height:24px}.mobile-playbar button strong{font-size:12px}.mobile-playbar button small{font-size:8px}}
++
++* { box-sizing: border-box; }
++
++html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
++
++body { background: var(--stage); }
++
++button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
++button:active { transform: translateY(1px); }
++[hidden] { display: none !important; }
++
++/* 舞台：占满整屏，手指拖动全部交给软体求解器 */
++#app { position: fixed; inset: 0; }
++#stage { position: absolute; inset: 0; }
++#scene { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: var(--stage); }
++#scene.grabbing { cursor: grabbing; }
++
++/* 竖屏 dock：文案贴顶、色板贴底，中间整块留给猫 */
++.dock {
++  position: absolute;
++  inset: 0;
++  z-index: 2;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  justify-content: flex-start;
++  pointer-events: none;
++  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
++}
++
++.caption {
++  margin: 0;
++  /* the line only has to clear the reset button, so only the right side is inset */
++  padding: 0 62px 0 0;
++  font-size: 24px;
++  line-height: 1.35;
++  letter-spacing: .04em;
++  color: var(--ink);
++  text-align: center;
++}
++
++/* 口味色板：汉字在下、颜色在上。margin-top:auto 把色板和复原按钮一起钉在屏幕底部。 */
++.flavors {
++  margin-top: auto;
++  display: flex;
++  gap: 2px;
++  padding: 10px 8px;
++  border: 1px solid var(--line);
++  border-radius: 28px;
++  background: var(--panel);
++  box-shadow: 0 12px 34px #4f554b12;
++  backdrop-filter: blur(18px);
++  pointer-events: auto;
++}
++
++.flavors button {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 6px;
++  width: 58px;
++  padding: 6px 0 4px;
++  border-radius: 22px;
++  transition: background .2s;
++}
++
++.flavors button:hover { background: #eef0ea80; }
++
++.flavors i {
++  display: block;
++  width: 24px;
++  height: 24px;
++  border-radius: 50%;
++  background: var(--dot, #bf9850);
++  box-shadow: inset 0 -7px 9px #00000024;
++  transition: box-shadow .2s;
++}
++
++.flavors span { font-size: 12px; color: var(--muted); transition: color .2s; }
++
++.flavors button[aria-pressed='true'] { background: #fff; }
++
++.flavors button[aria-pressed='true'] i {
++  box-shadow: inset 0 -7px 9px #00000024, 0 0 0 2px #fff, 0 0 0 4px var(--ink);
++}
++
++.flavors button[aria-pressed='true'] span { color: var(--ink); }
++
++/* 复原：猫头 + 「复原」两字，色板下方独占一行 */
++.reset {
++  margin-top: 10px;
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
++  height: 44px;
++  padding: 0 18px;
++  border: 1px solid var(--line);
++  border-radius: 999px;
++  background: var(--panel);
++  box-shadow: 0 10px 26px #4f554b12;
++  backdrop-filter: blur(18px);
++  font-size: 13px;
++  color: var(--ink);
++  pointer-events: auto;
++  transition: background .2s;
++}
++
++.reset:hover { background: #fdfcf8; }
++.reset svg { width: 22px; height: 22px; }
++
++/* 横屏：左栏放文字与色板，猫留在右栏 */
++@media (orientation: landscape) {
++  #app {
++    display: grid;
++    grid-template-columns: minmax(250px, 36%) 1fr;
++    grid-template-rows: 1fr;
++  }
++  #stage { position: relative; inset: auto; grid-area: 1 / 2 / 2 / 3; }
++  .dock {
++    position: relative;
++    inset: auto;
++    grid-area: 1 / 1 / 2 / 2;
++    flex-direction: column;
++    align-items: flex-start;
++    justify-content: center;
++    gap: 24px;
++    padding: 0 20px 0 clamp(20px, 4vw, 48px);
++    background: linear-gradient(90deg, #f8f1e8 55%, #f8f1e800);
++  }
++  .caption { font-size: 21px; text-align: left; max-width: 4.8em; padding: 0; }
++  .reset { align-self: flex-start; }
++  .flavors { margin-top: 0; flex-wrap: nowrap; max-width: none; justify-content: center; }
++  .flavors button { width: 44px; }
++}
++
++/* 窄屏微调 */
++@media (max-width: 360px) {
++  .caption { font-size: 21px; }
++  .flavors button { width: 54px; }
++}
++
++/* 没有可用渲染后端时的唯一反馈，默认隐藏 */
++#scene-message {
++  position: absolute;
++  left: 50%;
++  top: 46%;
++  transform: translate(-50%, -50%);
++  max-width: 320px;
++  text-align: center;
++  line-height: 1.7;
++  letter-spacing: .03em;
++  color: var(--muted);
++  pointer-events: none;
++}
++
++#retry {
++  position: absolute;
++  left: 50%;
++  top: 60%;
++  transform: translateX(-50%);
++  padding: 10px 24px;
++  border: 1px solid #b8b7af;
++  border-radius: 20px;
++  background: #f5f3ed;
++  font-size: 13px;
++}
+\ No newline at end of file
+diff --git a/src/ui/panel.ts b/src/ui/panel.ts
+index 422e0fe..98325f0 100644
+--- a/src/ui/panel.ts
++++ b/src/ui/panel.ts
+@@ -1,29 +1,35 @@
+-import { DEFAULT_FIRMNESS, DEFAULT_DAMPING } from '../physics/settings.ts';
+ export const element=<T extends HTMLElement>(selector:string)=>document.querySelector<T>(selector)!;
+-const grabIcon='<svg class="play-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17V7a2 2 0 0 1 4 0v8-3a2 2 0 0 1 4 0v3-1a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v5c0 5-3 8-8 8h-2c-3 0-5-2-7-4l-5-6a2.5 2.5 0 0 1 4-3l2 2"/><path d="M3 9l3 1M5 4l2 3"/></svg>';
+-const spoonIcon='<svg class="play-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="21" cy="10" rx="5.5" ry="8" transform="rotate(38 21 10)"/><path d="m16 16-11 12a2 2 0 0 1-3-3l12-11"/></svg>';
+-const resetIcon='<svg class="play-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10a11 11 0 1 1-1 11M7 3v7h7"/><path d="m13 21-1-7 4 2 4-2-1 7z"/></svg>';
++
++/** A plain cat head: two ears, a round face, two dot eyes. Used by the reset button. */
++const catHeadIcon='<svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M6.5 12.5 5 5.5l6.4 3.9a14 14 0 0 1 9.2 0L27 5.5l-1.5 7a11 11 0 1 1-19 0Z"/><circle cx="12.2" cy="16.4" r="1.5" fill="currentColor" stroke="none"/><circle cx="19.8" cy="16.4" r="1.5" fill="currentColor" stroke="none"/></svg>';
++
++export const FLAVORS=[
++  {id:'vanilla',label:'牛奶',dot:'#bf9850'},
++  {id:'berry',label:'草莓',dot:'#ab5760'},
++  {id:'matcha',label:'抹茶',dot:'#77986b'},
++  {id:'cocoa',label:'黑金',dot:'#e0a93f'},
++  {id:'cyber',label:'赛博',dot:'#ff3ec4'},
++] as const;
++
++/**
++ * squee · 猫咪牛奶布丁 — 极简界面
++ *
++ * 只保留四样东西：整屏的软体小猫咪、顶部一句玩法提示、五个口味的圆形色板、一个猫头复原按钮。
++ * 复原按钮独占一行（在色板下方），不与顶部文案同行。
++ * 竖屏时文案在顶部、口味在底部；横屏时文案与口味整体移到左侧，猫留在右边。
++ * 错误提示（#scene-message / #retry）默认隐藏，仅在没有可用渲染后端时出现。
++ */
+ export function mountPanel() {
++  const swatches=FLAVORS.map((f,i)=>`<button data-flavor="${f.id}" aria-pressed="${i===0}" style="--dot:${f.dot}"><i></i><span>${f.label}</span></button>`).join('');
+   element('#app').innerHTML=`
+-    <header class="masthead"><span>月鹿 · 甜点实验室 <i>/</i> 猫咪牛奶布丁 01</span><span id="gpu-status" class="status"><b></b> 准备中</span></header>
+-    <section class="intro" aria-labelledby="title"><h1 id="title">Milk &amp;<br><em>meow.</em></h1><p>一口牛奶，一点喵。<br>戳一下，快乐就晃起来。</p></section>
+-    <main id="stage" aria-label="Interactive pudding"><canvas id="scene" aria-label="Drag the pudding to stretch it, or switch to the spoon and press to scoop a bite. Use the nudge and Take a bite buttons for keyboard alternatives."></canvas><div id="scene-message" role="status">小猫正在准备登场<span></span></div><button id="retry" hidden>再试一次</button></main>
+-    <section class="caption"><p>戳一戳 · 拉一拉 · 松开看它晃</p><span>不用赶时间，让快乐多弹一会儿。</span><a class="discover-controls" href="#play-controls">游戏方法 · 调调手感 ↓</a><div class="readings"><div><output id="volume">100.0%</output><small>体积保持</small></div><div><output id="motion">0.00</output><small>晃动能量</small></div><div><output id="eaten">0%</output><small>已尝一口</small></div><div><output id="state">慢慢落下</output><small>此刻状态</small></div></div></section>
+-    <aside id="play-controls" class="controls" aria-label="Pudding controls">
+-      <div class="panel-heading"><h2>今日份软甜</h2><span id="flavor-number">01 / 03</span></div>
+-      <div class="flavors" role="group" aria-label="Flavor"><button data-flavor="vanilla" aria-pressed="true"><i></i>牛奶</button><button data-flavor="berry" aria-pressed="false"><i></i>草莓</button><button data-flavor="matcha" aria-pressed="false"><i></i>抹茶</button></div>
+-      <div class="play-heading"><b class="desktop-method-title">选个玩法</b><b class="mobile-method-title">游戏方法</b> <span>点一下试试</span></div>
+-      <div class="tools" role="group" aria-label="选择玩法"><button id="tool-grab" data-tool="grab" aria-pressed="true">${grabIcon}<strong>捏一捏</strong><small>按住拖动 · 松手回弹</small></button><button id="tool-spoon" data-tool="spoon" aria-pressed="false">${spoonIcon}<strong>小勺子</strong><small>用勺子挖走一小块</small></button></div>
+-      <p id="tool-hint" class="tool-hint" aria-live="polite">按住猫咪拖一拖，松手看它弹回来。</p>
+-      <button id="bite" class="bite-button"><strong>尝一口</strong><span>点一下，自动挖一勺 ↗</span></button>
+-      <div class="tuning"><div class="play-heading">调调手感 <span>左右拖动圆点</span></div>
+-      <label class="slider-label" for="firmness">弹性 <output id="firmness-value">${DEFAULT_FIRMNESS} / 100</output></label><input id="firmness" type="range" min="0" max="100" value="${DEFAULT_FIRMNESS}" aria-describedby="firmness-hint"><div id="firmness-hint" class="range-ends"><span>软糯</span><span>Q 弹</span></div>
+-      <label class="slider-label" for="damping">回弹收敛 <output id="damping-value">${DEFAULT_DAMPING} / 100</output></label><input id="damping" type="range" min="0" max="100" value="${DEFAULT_DAMPING}" aria-describedby="damping-hint"><div id="damping-hint" class="range-ends"><span>多晃一会</span><span>更快停稳</span></div></div>
+-      <button id="squish" class="squish">按下去，再弹起来 ↓</button><div class="actions"><button id="nudge">晃一晃 <span>↗</span></button><button id="reset">复原猫咪</button></div>
+-      <div class="toggles"><label><input id="slow" type="checkbox">慢动作</label><label><input id="mesh" type="checkbox">看网格</label><button id="pause" aria-pressed="false">暂停</button></div>
+-      <details id="about"><summary>关于这块布丁 <span>+</span></summary><p>按住猫咪拖动，身体和小猫脸会一起变形。松开后，看它慢慢弹回来。</p><p>体积约束让布丁在挤压时保留饱满感。调节弹性和回弹收敛，可以找到喜欢的手感。</p><p>小勺子会挖走真实的一小块；点击复原，猫咪就完整回来。</p><small>THREE.JS · WEBGPU · XPBD</small><a href="?inspect=1" class="inspect-link">Open rendering diagnostics ↗</a></details>
+-    </aside>
+-    <nav class="mobile-playbar" aria-label="猫咪快捷玩法"><p id="mobile-tool-hint" role="status">正在捏捏 · 按住猫咪拖动，松手回弹</p><div><button data-tool="grab" aria-pressed="true">${grabIcon}<strong>捏一捏</strong><small>切回手指玩</small></button><button data-tool="spoon" aria-pressed="false">${spoonIcon}<strong>小勺子</strong><small>按住再松手挖</small></button><button id="mobile-reset">${resetIcon}<strong>复原猫咪</strong><small>补完整 · 重新捏</small></button></div></nav>
+-    <footer>月鹿的布丁 · 随手捏一捏 <span>把日子过得软一点。</span></footer>
+-    <button id="inspector-toggle" hidden>Diagnostics</button><section id="diagnostics" hidden aria-label="Rendering diagnostics"><h2>Rendering diagnostics</h2><pre id="device-info"></pre><button id="benchmark">Record 60 seconds</button><output id="benchmark-status">Ready</output><pre id="benchmark-result"></pre><button id="compression-check">Hold 30% compression</button><button id="release-check">Release test grip</button><pre id="physics-info"></pre></section>`;
+-}
++    <main id="stage" aria-label="Interactive pudding">
++      <canvas id="scene" aria-label="按住猫咪拖动，松手看它回弹；摇一摇手机也会晃"></canvas>
++      <div id="scene-message" role="status" hidden></div>
++      <button id="retry" hidden>再试一次</button>
++    </main>
++    <div class="dock">
++      <p class="caption">捏一捏 · 拉一拉 · 摇一摇</p>
++      <div class="flavors" role="group" aria-label="口味">${swatches}</div>
++      <button id="reset" class="reset" aria-label="复原猫咪">${catHeadIcon}<span>复原</span></button>
++    </div>`;
++}
+\ No newline at end of file
+diff --git a/tests/interaction.test.ts b/tests/interaction.test.ts
+index c3695a3..a08e563 100644
+--- a/tests/interaction.test.ts
++++ b/tests/interaction.test.ts
+@@ -15,7 +15,7 @@ test('a browser without WebGPU receives an explicit initialization failure',asyn
+   await assert.rejects(createWorld({} as HTMLCanvasElement,new Simulation()),/cannot serve WebGPU/);
+ });
+ 
+-test('actual pointer handlers grab visible skin and release on cancel, lost capture and blur',()=>{
++test('one finger drags, a tap pokes, and cancel/lost capture/blur all let go',()=>{
+   const windowBefore=Object.getOwnPropertyDescriptor(globalThis,'window');
+   const fakeWindow=new EventTarget();Object.defineProperty(globalThis,'window',{value:fakeWindow,configurable:true});
+   const sim=new Simulation(),skin=new PuddingSurface(sim.body.mesh);
+@@ -31,7 +31,7 @@ test('actual pointer handlers grab visible skin and release on cancel, lost capt
+     releasePointerCapture(){this.captured=false;}
+   }
+   const canvas=new Canvas();
+-  const event=(type:string,x=50,y=50)=>Object.assign(new Event(type),{pointerId:7,button:0,clientX:x,clientY:y});
++  const event=(type:string,x=50,y=50,pointerId=7)=>Object.assign(new Event(type),{pointerId,button:0,clientX:x,clientY:y});
+   const handler=installGrab(canvas as unknown as HTMLCanvasElement,{camera,pudding,skin} as unknown as World,sim);
+   try {
+     for(const kind of ['pointercancel','lostpointercapture','blur']) {
+@@ -39,8 +39,17 @@ test('actual pointer handlers grab visible skin and release on cancel, lost capt
+       canvas.dispatchEvent(event('pointermove',58,42));assert.notDeepEqual(sim.body.grab.target,sim.body.grab.anchor);
+       (kind==='blur'?fakeWindow:canvas).dispatchEvent(event(kind));assert.equal(sim.body.grab,null);assert.equal(canvas.captured,false);
+     }
+-    canvas.dispatchEvent(event('pointerdown'));canvas.dispatchEvent(event('pointerup'));
+-    assert.ok(sim.body.velocity.some(v=>v!==0),'A short click must apply a tap impulse');
++    // A tap pokes: the patch is held and driven inwards for a beat instead of firing a velocity impulse.
++    canvas.dispatchEvent(event('pointerdown'));
++    canvas.dispatchEvent(event('pointerup'));
++    assert.ok(sim.body.grab,'a tap must take hold of the surface it pressed');
++    assert.deepEqual(sim.body.grab.target,sim.body.grab.anchor,'the dent eases in rather than snapping to full depth');
++    assert.equal(handler.stats.pokes,1);
++    handler.update(.08);
++    const halfway=sim.body.grab.target;
++    assert.ok(halfway.some((v,k)=>Math.abs(v-sim.body.grab!.anchor[k])>.001),'the poke presses in while it holds');
++    assert.ok(Math.hypot(...halfway.map((v,k)=>v-sim.body.grab!.anchor[k]))<.2,'and only part way, not the full depth at once');
++    handler.update(.1);assert.equal(sim.body.grab,null,'and then lets go');
+     sim.pause(true);canvas.dispatchEvent(event('pointerdown'));assert.equal(sim.body.grab,null);
+   } finally {
+     handler.dispose();geometry.dispose();pudding.material.dispose();
+@@ -48,6 +57,46 @@ test('actual pointer handlers grab visible skin and release on cancel, lost capt
+   }
+ });
+ 
++test('two fingers squeeze the pudding inwards and lifting one keeps the other holding on',()=>{
++  const windowBefore=Object.getOwnPropertyDescriptor(globalThis,'window');
++  const fakeWindow=new EventTarget();Object.defineProperty(globalThis,'window',{value:fakeWindow,configurable:true});
++  const sim=new Simulation(),skin=new PuddingSurface(sim.body.mesh);
++  const geometry=new BufferGeometry();geometry.setIndex(new BufferAttribute(skin.indices,1));geometry.setAttribute('position',new BufferAttribute(skin.positions,3));
++  const pudding=new Mesh(geometry,new MeshBasicMaterial()),camera=new PerspectiveCamera(31,1,.1,20);
++  camera.position.set(0,.67,6.8);camera.lookAt(0,.67,0);camera.updateMatrixWorld();pudding.updateMatrixWorld();
++  class Canvas extends EventTarget {
++    captured=false;
++    classList={add:()=>{},remove:()=>{}};
++    getBoundingClientRect(){return {left:0,top:0,width:100,height:100};}
++    setPointerCapture(){this.captured=true;}
++    hasPointerCapture(){return this.captured;}
++    releasePointerCapture(){this.captured=false;}
++  }
++  const canvas=new Canvas();
++  const event=(type:string,x=50,y=50,pointerId=7)=>Object.assign(new Event(type),{pointerId,button:0,clientX:x,clientY:y});
++  const handler=installGrab(canvas as unknown as HTMLCanvasElement,{camera,pudding,skin} as unknown as World,sim);
++  // Distance of the grip target from the middle of the body, which a squeeze has to shorten.
++  const reach=()=>{const t=sim.body.grab!.target;return Math.hypot(t[0],t[1]-.7,t[2]);};
++  try {
++    canvas.dispatchEvent(event('pointerdown',25,50,1));
++    canvas.dispatchEvent(event('pointerdown',75,50,2));
++    assert.ok(sim.body.grab,'the second finger takes hold as well');
++    const before=reach();
++    canvas.dispatchEvent(event('pointermove',40,50,1));
++    canvas.dispatchEvent(event('pointermove',60,50,2));
++    assert.ok(reach()<before,`closing the fingers must press in (${reach().toFixed(3)} vs ${before.toFixed(3)})`);
++    assert.ok(handler.stats.squeezes>0);
++    // Lifting one finger keeps the cat held by the other rather than dropping it.
++    canvas.dispatchEvent(event('pointerup',40,50,1));
++    assert.ok(sim.body.grab,'the surviving finger keeps its grip');
++    canvas.dispatchEvent(event('pointerup',60,50,2));
++    assert.equal(sim.body.grab,null);
++  } finally {
++    handler.dispose();geometry.dispose();pudding.material.dispose();
++    if(windowBefore)Object.defineProperty(globalThis,'window',windowBefore);else Reflect.deleteProperty(globalThis,'window');
++  }
++});
++
+ test('the spoon tool presses on pointer down, bites on release and keeps the grab tool idle',()=>{
+   const windowBefore=Object.getOwnPropertyDescriptor(globalThis,'window');
+   const fakeWindow=new EventTarget();Object.defineProperty(globalThis,'window',{value:fakeWindow,configurable:true});
+@@ -74,6 +123,7 @@ test('the spoon tool presses on pointer down, bites on release and keeps the gra
+     for(let i=0;i<60;i++)sim.advance(1/60);
+     canvas.dispatchEvent(event('pointerdown'));assert.equal(sim.body.spoon===null,true,'the spoon is idle while fingers are active');
+     assert.ok(sim.body.grab);canvas.dispatchEvent(event('pointerup'));
++    grab.update(1);assert.equal(sim.body.grab,null,'that tap was a poke, and the poke lets go on its own');
+     sim.tool='spoon';
+     canvas.dispatchEvent(event('pointermove'));assert.ok(world.spoonTarget.y>sim.body.mesh.height,'hovering rests the bowl just above the top it points at');
+     canvas.dispatchEvent(event('pointerdown'));assert.equal(sim.body.grab,null);
+diff --git a/tests/physics.test.ts b/tests/physics.test.ts
+index 9276dd9..e7795c8 100644
+--- a/tests/physics.test.ts
++++ b/tests/physics.test.ts
+@@ -2,6 +2,7 @@ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import { Simulation } from '../src/physics/simulation.ts';
+ import { PuddingSurface } from '../src/pudding/surface.ts';
++import { makeVolumeMesh,CAT_YAW } from '../src/physics/mesh.ts';
+ 
+ const run=(s:Simulation,seconds:number)=>{for(let i=0;i<seconds*60;i++)s.advance(1/60);};
+ test('closed skin preserves translations with normalized nonnegative weights',()=>{
+@@ -71,3 +72,15 @@ test('10 and 15 fps retain real-time physics and the same rebound as 60 fps',()=
+     assert.ok(s.body.metrics().minTetRatio>0);
+   }
+ });
++
++test('the silhouette is mirror symmetric about its own centre plane',()=>{
++  // Everything addressed in the cat's own frame (glaze band, face decal, camera heading) relies on this.
++  const mesh=makeVolumeMesh(),{rest,n}=mesh,ca=Math.cos(CAT_YAW),sa=Math.sin(CAT_YAW);
++  const bodyX=(i:number)=>rest[i*3]*ca-rest[i*3+2]*sa;
++  for(let i=0;i<rest.length/3;i++){
++    const gx=i%(n+1),gz=Math.floor(i/(n+1))%(n+1),gy=Math.floor(i/((n+1)*(n+1)));
++    const j=((gy*(n+1)+gz)*(n+1)+(n-gx));
++    assert.ok(Math.abs(bodyX(i)+bodyX(j))<1e-12,'rest node pair is not mirrored in the body frame');
++    assert.ok(Math.abs(rest[i*3+1]-rest[j*3+1])<1e-12,'mirrored rest nodes differ in height');
++  }
++});

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pudding stage background, shared with the WebView window so insets blend in. -->
+    <color name="stage">#F1E9DF</color>
+    <color name="ic_launcher_background">#F1E9DF</color>
+</resources>
