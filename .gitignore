@@ -2,6 +2,9 @@ node_modules/
 *.apk
 *.aab
 *.keystore
+*.jks
+*.p12
+*.pem
 
 # build / tooling artifacts
 .gradle/
